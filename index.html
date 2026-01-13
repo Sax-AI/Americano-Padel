@@ -4,101 +4,39 @@
 <meta charset="UTF-8">
 <title>Americano Padel</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
-<!-- PWA -->
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1e7f5c">
 
 <style>
-body {
-    font-family: Arial, sans-serif;
-    background:#f4f6f8;
-    padding:15px;
-    max-width:1200px;
-    margin:auto;
-}
-.box {
-    background:#fff;
-    padding:15px;
-    margin-bottom:15px;
-    border-radius:8px;
-}
-input, button {
-    width:100%;
-    padding:8px;
-    margin-top:6px;
-}
-button {
-    background:#1e7f5c;
-    color:white;
-    border:none;
-    font-size:16px;
-}
-.reset { background:#b00020; }
-.hidden { display:none; }
+body{font-family:Arial,sans-serif;background:#f4f6f8;padding:15px;max-width:1200px;margin:auto}
+.box{background:#fff;padding:15px;margin-bottom:15px;border-radius:8px}
+input,button{width:100%;padding:8px;margin-top:6px}
+button{background:#1e7f5c;color:#fff;border:none;font-size:16px}
+.reset{background:#b00020}
+.hidden{display:none}
+.match{background:#f1f1f1;padding:14px;border-radius:6px;margin-top:12px}
 
-.match {
-    background:#f1f1f1;
-    padding:14px;
-    border-radius:6px;
-    margin-top:12px;
-}
+.scoreline{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:8px;font-size:24px;font-weight:bold}
+.team{width:40%;text-align:right}
+.team.away{text-align:left}
+.score{font-size:32px;min-width:140px;text-align:center}
+.score input{width:60px;font-size:26px;text-align:center}
 
-/* SCORE-LINJE (fodbold-look) */
-.scoreline {
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:16px;
-    margin-top:8px;
-    font-size:24px;
-    font-weight:bold;
-}
-.team {
-    width:40%;
-    text-align:right;
-}
-.team.away {
-    text-align:left;
-}
-.score {
-    font-size:32px;
-    min-width:140px;
-    text-align:center;
-}
-.score input {
-    width:60px;
-    font-size:26px;
-    text-align:center;
-}
-
-/* RESULTAT */
-table {
-    width:100%;
-    border-collapse:collapse;
-}
-th, td {
-    padding:8px;
-    border-bottom:1px solid #ddd;
-    text-align:center;
-}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px;border-bottom:1px solid #ddd;text-align:center}
 </style>
 </head>
 
 <body>
-
 <h2>Americano Padel</h2>
 
 <div class="box">
 <label>Antal spillere</label>
 <input type="number" id="playerCount" value="8" min="4">
-
 <label>Antal baner</label>
 <input type="number" id="courtCount" value="2" min="1">
-
 <label>Point pr. kamp</label>
 <input type="number" id="maxPoints" value="32" min="1">
-
 <button onclick="opretSpillere()">Opret spillere</button>
 </div>
 
@@ -130,123 +68,125 @@ th, td {
 </div>
 
 <script>
-/* ===== PWA ===== */
-if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js");
-}
+if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js")}
 
-/* ===== LOGIK ===== */
-let spillere = [], kampe = [], scores = [], byes = [];
-let TOTAL = 32;
+let spillere=[], kampe=[], scores=[]
+let TOTAL=32
 
 function opretSpillere(){
-    const n = Number(playerCount.value);
-    players.innerHTML = "";
-    for(let i=0;i<n;i++){
-        players.innerHTML += `<input placeholder="Spiller ${i+1}">`;
-    }
-    playersBox.classList.remove("hidden");
+  players.innerHTML=""
+  for(let i=0;i<playerCount.value;i++){
+    players.innerHTML+=`<input placeholder="Spiller ${i+1}">`
+  }
+  playersBox.classList.remove("hidden")
 }
 
 function lavAmericano(){
-    TOTAL = Number(maxPoints.value);
-    spillere = [...document.querySelectorAll("#players input")]
-        .map(i => i.value || i.placeholder);
+  TOTAL=Number(maxPoints.value)
+  spillere=[...document.querySelectorAll("#players input")].map(i=>i.value||i.placeholder)
+  kampe=[]; scores=[]
+  const n=spillere.length
+  const baner=Number(courtCount.value)
 
-    kampe = []; scores = []; byes = [];
+  let fixed=spillere[0]
+  let rest=spillere.slice(1)
+  let round=0
 
-    const n = spillere.length;
-    let fixed = spillere[0];
-    let rest = spillere.slice(1);
-
-    for(let r=0;r<n-1;r++){
-        let round = [fixed, ...rest];
-        let pairs = [];
-
-        for(let i=0;i<Math.floor(n/2);i++){
-            pairs.push([round[i], round[n-1-i]]);
-        }
-
-        if(n % 2 === 1){
-            byes.push(round[Math.floor(n/2)]);
-        }
-
-        for(let i=0;i<pairs.length;i+=2){
-            if(pairs[i+1]){
-                kampe.push({ h:pairs[i], u:pairs[i+1] });
-                scores.push(null);
-            }
-        }
-        rest.unshift(rest.pop());
+  for(let r=0;r<n-1;r++){
+    let roundPlayers=[fixed,...rest]
+    let pairs=[]
+    for(let i=0;i<Math.floor(n/2);i++){
+      pairs.push([roundPlayers[i],roundPlayers[n-1-i]])
     }
 
-    renderKampe();
+    for(let i=0;i<pairs.length;i+=2){
+      if(pairs[i+1]){
+        kampe.push({h:pairs[i],u:pairs[i+1],round})
+        scores.push(null)
+      }
+    }
+
+    round++
+    rest.unshift(rest.pop())
+  }
+
+  renderKampe()
 }
 
 function renderKampe(){
-    matches.innerHTML = "";
-    kampe.forEach((k,i)=>{
-        matches.innerHTML += `
-        <div class="match">
-            <div class="scoreline">
-                <div class="team">${k.h.join(" & ")}</div>
-                <div class="score">
-                    <input type="number" min="0" max="${TOTAL}"
-                           oninput="indtast(${i},this.value)">
-                    <span> – </span>
-                    <span id="away${i}"></span>
-                </div>
-                <div class="team away">${k.u.join(" & ")}</div>
-            </div>
-        </div>`;
-    });
-    matchesBox.classList.remove("hidden");
+  matches.innerHTML=""
+  kampe.forEach((k,i)=>{
+    matches.innerHTML+=`
+    <div class="match">
+      <div class="scoreline">
+        <div class="team">${k.h.join(" & ")}</div>
+        <div class="score">
+          <input type="number" min="0" max="${TOTAL}" oninput="indtast(${i},this.value)">
+          <span> – </span><span id="away${i}"></span>
+        </div>
+        <div class="team away">${k.u.join(" & ")}</div>
+      </div>
+    </div>`
+  })
+  matchesBox.classList.remove("hidden")
 }
 
 function indtast(i,v){
-    v = Math.max(0, Math.min(TOTAL, Number(v)));
-    scores[i] = v;
-    document.getElementById("away"+i).innerText = TOTAL - v;
-    beregn();
+  v=Math.max(0,Math.min(TOTAL,Number(v)))
+  scores[i]=v
+  document.getElementById("away"+i).innerText=TOTAL-v
+  beregn()
 }
 
 function beregn(){
-    let pts={}, wins={}, games={};
-    spillere.forEach(s=>{
-        pts[s]=0; wins[s]=0; games[s]=0;
-    });
+  let pts={},wins={},games={}
+  spillere.forEach(s=>{pts[s]=0;wins[s]=0;games[s]=0})
 
-    kampe.forEach((m,i)=>{
-        if(scores[i]==null) return;
-        const h = scores[i], u = TOTAL - h;
-        m.h.forEach(s=>{ pts[s]+=h; games[s]++; });
-        m.u.forEach(s=>{ pts[s]+=u; games[s]++; });
-        if(h>u) m.h.forEach(s=>wins[s]++);
-        if(u>h) m.u.forEach(s=>wins[s]++);
-    });
+  // normale kampe
+  kampe.forEach((m,i)=>{
+    if(scores[i]==null)return
+    const h=scores[i],u=TOTAL-h
+    m.h.forEach(s=>{pts[s]+=h;games[s]++})
+    m.u.forEach(s=>{pts[s]+=u;games[s]++})
+    if(h>u)m.h.forEach(s=>wins[s]++)
+    if(u>h)m.u.forEach(s=>wins[s]++)
+  })
 
-    /* BYE = ½ point + 1 kamp */
-    byes.forEach(s=>{
-        pts[s] += TOTAL/2;
-        games[s] += 1;
-    });
+  // BYE – kun for afsluttede runder
+  const rounds=[...new Set(kampe.map(k=>k.round))]
+  rounds.forEach(r=>{
+    const idx=kampe
+      .map((k,i)=>k.round===r?i:null)
+      .filter(i=>i!==null)
 
-    resultat.innerHTML = spillere
-        .sort((a,b)=> pts[b]-pts[a] || wins[b]-wins[a])
-        .map(s=>`
-        <tr>
-            <td>${s}</td>
-            <td>${pts[s]}</td>
-            <td>${wins[s]}</td>
-            <td>${games[s]}</td>
-            <td>${(pts[s]/games[s]).toFixed(1)}</td>
-        </tr>`).join("");
+    if(idx.every(i=>scores[i]!==null)){
+      const played=new Set()
+      idx.forEach(i=>{
+        kampe[i].h.forEach(p=>played.add(p))
+        kampe[i].u.forEach(p=>played.add(p))
+      })
+      spillere.filter(s=>!played.has(s)).forEach(s=>{
+        pts[s]+=TOTAL/2
+        games[s]+=1
+      })
+    }
+  })
 
-    resultBox.classList.remove("hidden");
+  resultat.innerHTML=spillere
+    .sort((a,b)=>pts[b]-pts[a]||wins[b]-wins[a])
+    .map(s=>`
+    <tr>
+      <td>${s}</td>
+      <td>${pts[s]}</td>
+      <td>${wins[s]}</td>
+      <td>${games[s]}</td>
+      <td>${games[s]?(pts[s]/games[s]).toFixed(1):"-"}</td>
+    </tr>`).join("")
+
+  resultBox.classList.remove("hidden")
 }
 
-function reset(){ location.reload(); }
+function reset(){location.reload()}
 </script>
-
 </body>
 </html>
