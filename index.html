@@ -23,6 +23,8 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
 
 .match{background:#f1f1f1;padding:10px;border-radius:6px;margin-bottom:8px}
 .match.locked{opacity:.6}
+.matchhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:14px;color:#333}
+.badge{background:#e6efe9;border-radius:999px;padding:4px 10px;font-weight:bold}
 
 .scoreline{
   display:grid;
@@ -33,6 +35,7 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
 .team{text-align:center;font-weight:bold;word-break:break-word}
 .score{font-size:26px;text-align:center}
 .score input{width:64px;font-size:24px;text-align:center}
+
 @media(max-width:600px){
   .scoreline{grid-template-columns:1fr}
   .score{font-size:32px}
@@ -79,6 +82,8 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 <div class="box">
 <label>Antal spillere</label>
 <input type="number" id="playerCount" value="8" min="4">
+<label>Antal baner</label>
+<input type="number" id="courtCount" value="2" min="1">
 <label>Point pr. kamp</label>
 <input type="number" id="maxPoints" value="32" min="1">
 <button onclick="initPlayers()">Opret spillere</button>
@@ -132,7 +137,6 @@ function saveAll(){
   else localStorage.removeItem("currentTournament");
 }
 
-/* ===== FALLBACK CURRENT (fix efter slet/refresh) ===== */
 function ensureCurrent(){
   const keys = Object.keys(tournaments);
   if((!current || !tournaments[current]) && keys.length){
@@ -161,12 +165,11 @@ tournamentSelect.onchange=()=>{
 function createTournament(){
   const name=newTournamentName.value.trim();
   if(!name||tournaments[name])return alert("Ugyldigt navn");
-  tournaments[name]={players:[],matches:[],scores:[],locks:[],TOTAL:32};
+  tournaments[name]={players:[],matches:[],scores:[],locks:[],TOTAL:32,COURTS:2};
   current=name;
   saveAll();refreshSelect();hydrate();
 }
 
-/* ===== SLET TURNERING (FIX: vælg ny current) ===== */
 function deleteTournament(){
   if(!confirm("Slet turnering?")) return;
 
@@ -177,12 +180,10 @@ function deleteTournament(){
 
   saveAll();
 
-  // Opdatér UI uden at kræve at brugeren opretter en ny turnering
   if(current){
     refreshSelect();
     hydrate();
   } else {
-    // Ingen turneringer tilbage -> ryd visning
     refreshSelect();
     players.innerHTML=""; matches.innerHTML=""; resultat.innerHTML="";
     playersBox.classList.add("hidden");
@@ -208,11 +209,14 @@ function importTournament(event){
     const name=f.name.replace(".json","");
     tournaments[name]=JSON.parse(r.result);
 
-    tournaments[name].players ||= [];
-    tournaments[name].matches ||= [];
-    tournaments[name].scores ||= [];
-    tournaments[name].locks ||= [];
-    tournaments[name].TOTAL ||= 32;
+    // defaults / bagudkompatibilitet
+    const t=tournaments[name];
+    t.players ||= [];
+    t.matches ||= [];
+    t.scores ||= [];
+    t.locks ||= [];
+    t.TOTAL ||= 32;
+    t.COURTS ||= 2;
 
     current=name;
     saveAll();
@@ -238,6 +242,11 @@ function hydrate(){
   t.scores ||= [];
   t.locks ||= [];
   t.TOTAL ||= Number(maxPoints.value) || 32;
+  t.COURTS ||= Number(courtCount.value) || 1;
+
+  // sæt inputs, så UI afspejler turneringen
+  maxPoints.value = t.TOTAL;
+  courtCount.value = t.COURTS;
 
   players.innerHTML="";
   matches.innerHTML="";
@@ -249,7 +258,7 @@ function hydrate(){
     inp.oninput=()=>{
       p.name=inp.value;
       saveAll();
-      render();
+      render(); // navneændring -> fuld render ok
     };
     players.appendChild(inp);
   });
@@ -268,38 +277,86 @@ function initPlayers(){
   for(let i=0;i<playerCount.value;i++){
     t.players.push({id:`p-${base}-${i}`,name:`Spiller ${i+1}`});
   }
+
   t.matches=[]; t.scores=[]; t.locks=[];
+  t.TOTAL = Number(maxPoints.value) || 32;
+  t.COURTS = Math.max(1, Number(courtCount.value) || 1);
+
   saveAll();
   hydrate();
 }
 
-/* ===== PROGRAM ===== */
+/* ===== PROGRAMGENERERING MED ANTAL BANER =====
+   Vi laver "super-runder" via circle method (round-robin par) og splitter
+   hver super-runde op i flere tids-slots afhængigt af COURTS.
+   Hver tids-slot = "Runde X" i UI (og bye tæller pr. tids-slot).
+*/
 function generateProgram(){
   const t=tournaments[current];
-  t.matches=[];
-  t.scores=[];
-  t.locks=[];
-  t.TOTAL=Number(maxPoints.value);
+
+  t.TOTAL = Number(maxPoints.value) || 32;
+  t.COURTS = Math.max(1, Number(courtCount.value) || 1);
 
   const ids=t.players.map(p=>p.id);
-  let fixed=ids[0],rest=ids.slice(1),round=1;
+  if(ids.length < 4) return alert("Mindst 4 spillere");
 
-  for(let r=0;r<ids.length-1;r++){
+  // Hvis ulige antal, tilføj en "ghost" (sidder over i par-generationen)
+  const hasGhost = (ids.length % 2 === 1);
+  const ghost = "__GHOST__";
+  const list = hasGhost ? ids.concat([ghost]) : ids.slice();
+  const n=list.length;
+
+  const fixed=list[0];
+  let rest=list.slice(1);
+
+  const timeSlots=[]; // hver slot: { round, court, h:[..], u:[..] }
+
+  let slotRound = 1;
+
+  // n-1 super-runder
+  for(let r=0;r<n-1;r++){
     const rp=[fixed,...rest];
-    for(let i=0;i<Math.floor(ids.length/2);i+=2){
-      if(rp[i+1]){
-        t.matches.push({
-          h:[rp[i],rp[ids.length-1-i]],
-          u:[rp[i+1],rp[ids.length-2-i]],
-          round
-        });
-        t.scores.push(null);
-        t.locks.push(false);
+
+    // lav par (n/2 par)
+    const pairs=[];
+    for(let i=0;i<n/2;i++){
+      const a=rp[i], b=rp[n-1-i];
+      pairs.push([a,b]);
+    }
+
+    // fjern ghost-par og par der indeholder ghost
+    const realPairs = pairs.filter(p=>p[0]!==ghost && p[1]!==ghost);
+
+    // gruppér to par ad gangen til en kamp (4 spillere)
+    const matches=[];
+    for(let i=0;i<realPairs.length;i+=2){
+      if(realPairs[i+1]){
+        matches.push({h:realPairs[i], u:realPairs[i+1]});
       }
     }
-    round++;
+
+    // split matches ud på tids-slots med COURTS pr slot
+    for(let start=0; start<matches.length; start += t.COURTS){
+      const slice = matches.slice(start, start+t.COURTS);
+      slice.forEach((m,idx)=>{
+        timeSlots.push({
+          round: slotRound,
+          court: idx+1,
+          h: m.h,
+          u: m.u
+        });
+      });
+      slotRound++;
+    }
+
+    // roter rest
     rest.unshift(rest.pop());
   }
+
+  t.matches = timeSlots;
+  t.scores = Array(timeSlots.length).fill(null);
+  t.locks  = Array(timeSlots.length).fill(false);
+
   saveAll();
   render();
 }
@@ -319,10 +376,13 @@ function render(){
   }
 
   matches.innerHTML="";
+
   const rounds=[...new Set(t.matches.map(m=>m.round))];
 
   rounds.forEach(r=>{
     const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
+
+    // hvem spiller i denne tids-slot?
     const played=new Set();
     idx.forEach(i=>{
       t.matches[i].h.forEach(id=>played.add(id));
@@ -336,11 +396,16 @@ function render(){
         ${byes.length?`<div class="bye">Sidder over: ${byes.join(", ")}</div>`:""}
       </div>`;
 
+    // kampe pr bane
     idx.forEach(i=>{
       const m=t.matches[i];
-      const locked = !!t.locks[i];
+      const locked=!!t.locks[i];
       matches.innerHTML+=`
       <div class="match ${locked?'locked':''}">
+        <div class="matchhead">
+          <span class="badge">Bane ${m.court}</span>
+          <label><input type="checkbox" ${locked?'checked':''} onchange="toggleLock(${i},this.checked)"> Lås kamp</label>
+        </div>
         <div class="scoreline">
           <div class="team">${m.h.map(getName).join(" & ")}</div>
           <div class="score">
@@ -354,9 +419,6 @@ function render(){
             </span>
           </div>
           <div class="team">${m.u.map(getName).join(" & ")}</div>
-        </div>
-        <div class="controls">
-          <label><input type="checkbox" ${locked?'checked':''} onchange="toggleLock(${i},this.checked)"> Lås kamp</label>
         </div>
       </div>`;
     });
@@ -381,10 +443,13 @@ function indtast(i,v){
   if(t.locks[i]) return;
 
   const span=document.getElementById(`away-${current}-${i}`);
+
   if(v===""){
     t.scores[i]=null;
     if(span) span.textContent="";
-    saveAll(); beregn(); return;
+    saveAll();
+    beregn();
+    return;
   }
 
   v=Math.max(0,Math.min(t.TOTAL,Number(v)));
@@ -407,7 +472,7 @@ function resetTournament(){
   render();
 }
 
-/* ===== STILLLING + OVERSIDDER ===== */
+/* ===== STILLLING + OVERSIDDER (bye-point kun når hele runden er færdig) ===== */
 function beregn(){
   const t=tournaments[current];
   if(!t) return;
@@ -427,11 +492,13 @@ function beregn(){
     if(u>h) m.u.forEach(id=>wins[id]++);
   });
 
-  // Bye pr. runde (kun når hele runden er færdig)
+  // Bye pr. tids-slot (runde) – kun når alle baner i runden har score
   const rounds=[...new Set(t.matches.map(m=>m.round))];
   rounds.forEach(r=>{
     const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
-    if(idx.every(i=>t.scores[i]!=null)){
+
+    // runden er afsluttet når ALLE kampe i denne tids-slot har score
+    if(idx.length && idx.every(i=>t.scores[i]!=null)){
       const played=new Set();
       idx.forEach(i=>{
         t.matches[i].h.forEach(id=>played.add(id));
@@ -439,7 +506,7 @@ function beregn(){
       });
       t.players.filter(p=>!played.has(p.id)).forEach(p=>{
         pts[p.id]+=t.TOTAL/2;
-        games[p.id]+=1;
+        games[p.id]+=1;        // bye tæller som kamp i snit
         overs[p.id]=true;
       });
     }
