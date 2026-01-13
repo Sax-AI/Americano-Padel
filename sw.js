@@ -1,4 +1,4 @@
-const CACHE_NAME = "americano-padel-v6";
+const CACHE_NAME = "americano-padel-v7";
 const FILES = ["./", "./index.html", "./manifest.json"];
 
 self.addEventListener("install", e => {
