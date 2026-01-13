@@ -38,6 +38,7 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
 
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
+.check{color:#1e7f5c;font-weight:bold;font-size:18px}
 </style>
 </head>
 
@@ -76,7 +77,12 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 <table>
 <thead>
 <tr>
-<th>Spiller</th><th>Point</th><th>Vundne</th><th>Kampe</th><th>Snit</th>
+<th>Spiller</th>
+<th>Point</th>
+<th>Vundne</th>
+<th>Kampe</th>
+<th>Snit</th>
+<th>Oversidder</th>
 </tr>
 </thead>
 <tbody id="resultat"></tbody>
@@ -92,7 +98,7 @@ function saveAll(){
   if(current) localStorage.setItem("currentTournament",current);
 }
 
-/* ===== TURNERINGER ===== */
+/* TURNERINGER */
 function refreshSelect(){
   tournamentSelect.innerHTML="";
   Object.keys(tournaments).forEach(n=>{
@@ -116,7 +122,7 @@ function createTournament(){
   saveAll();refreshSelect();hydrate();
 }
 
-/* ===== HYDRATE ===== */
+/* HYDRATE */
 function hydrate(){
   const t=tournaments[current];
   if(!t)return;
@@ -136,14 +142,14 @@ function hydrate(){
     players.appendChild(inp);
   });
 
-  if(t.players.length) playersBox.classList.remove("hidden");
+  if(t.players.length)playersBox.classList.remove("hidden");
   render();
 }
 
-/* ===== SPILLERE ===== */
+/* SPILLERE */
 function initPlayers(){
   const t=tournaments[current];
-  if(!t) return alert("Opret turnering først");
+  if(!t)return alert("Opret turnering først");
 
   t.players=[];
   const base=Date.now();
@@ -153,7 +159,7 @@ function initPlayers(){
   saveAll();hydrate();
 }
 
-/* ===== PROGRAM ===== */
+/* PROGRAM */
 function generateProgram(){
   const t=tournaments[current];
   t.matches=[];
@@ -186,7 +192,7 @@ function getName(id){
   return p?p.name:"?";
 }
 
-/* ===== RENDER ===== */
+/* RENDER */
 function render(){
   const t=tournaments[current];
   if(!t||!t.matches.length)return;
@@ -195,9 +201,24 @@ function render(){
   const rounds=[...new Set(t.matches.map(m=>m.round))];
 
   rounds.forEach(r=>{
-    matches.innerHTML+=`<div class="round"><h3>Runde ${r}</h3></div>`;
-    t.matches.forEach((m,i)=>{
-      if(m.round!==r)return;
+    const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
+    const played=new Set();
+
+    idx.forEach(i=>{
+      t.matches[i].h.forEach(id=>played.add(id));
+      t.matches[i].u.forEach(id=>played.add(id));
+    });
+
+    const byes=t.players.filter(p=>!played.has(p.id)).map(p=>p.name);
+
+    matches.innerHTML+=`
+      <div class="round">
+        <h3>Runde ${r}</h3>
+        ${byes.length?`<div class="bye">Sidder over: ${byes.join(", ")}</div>`:""}
+      </div>`;
+
+    idx.forEach(i=>{
+      const m=t.matches[i];
       matches.innerHTML+=`
       <div class="match">
         <div class="scoreline">
@@ -221,36 +242,34 @@ function render(){
   matchesBox.classList.remove("hidden");
 }
 
-/* ===== SCORE INPUT ===== */
+/* SCORE INPUT */
 function indtast(i,v){
   const t=tournaments[current];
   const span=document.getElementById(`away-${current}-${i}`);
 
   if(v===""){
     t.scores[i]=null;
-    if(span) span.textContent="";
-    saveAll();
-    beregn();
-    return;
+    if(span)span.textContent="";
+    saveAll();beregn();return;
   }
 
   v=Math.max(0,Math.min(t.TOTAL,Number(v)));
   t.scores[i]=v;
-  if(span) span.textContent=t.TOTAL - v;
+  if(span)span.textContent=t.TOTAL-v;
 
-  saveAll();
-  beregn();
+  saveAll();beregn();
 }
 
-/* ===== STILLLING ===== */
+/* STILLING + OVERSIDDER */
 function beregn(){
   const t=tournaments[current];
-  let pts={},wins={},games={};
+  let pts={},wins={},games={},overs={};
 
   t.players.forEach(p=>{
     pts[p.id]=0;
     wins[p.id]=0;
     games[p.id]=0;
+    overs[p.id]=false;
   });
 
   t.matches.forEach((m,i)=>{
@@ -262,6 +281,23 @@ function beregn(){
     if(u>h)m.u.forEach(id=>wins[id]++);
   });
 
+  const rounds=[...new Set(t.matches.map(m=>m.round))];
+  rounds.forEach(r=>{
+    const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
+    if(idx.every(i=>t.scores[i]!=null)){
+      const played=new Set();
+      idx.forEach(i=>{
+        t.matches[i].h.forEach(id=>played.add(id));
+        t.matches[i].u.forEach(id=>played.add(id));
+      });
+      t.players.filter(p=>!played.has(p.id)).forEach(p=>{
+        pts[p.id]+=t.TOTAL/2;
+        games[p.id]++;
+        overs[p.id]=true;
+      });
+    }
+  });
+
   resultat.innerHTML=t.players
     .sort((a,b)=>pts[b.id]-pts[a.id]||wins[b.id]-wins[a.id])
     .map(p=>`
@@ -271,14 +307,15 @@ function beregn(){
         <td>${wins[p.id]}</td>
         <td>${games[p.id]}</td>
         <td>${games[p.id]?(pts[p.id]/games[p.id]).toFixed(1):"-"}</td>
+        <td>${overs[p.id]?'<span class="check">✓</span>':""}</td>
       </tr>`).join("");
 
   resultBox.classList.remove("hidden");
 }
 
-/* ===== INIT ===== */
+/* INIT */
 refreshSelect();
-if(current) hydrate();
+if(current)hydrate();
 </script>
 
 </body>
