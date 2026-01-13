@@ -129,6 +129,16 @@ let current = localStorage.getItem("currentTournament")||null;
 function saveAll(){
   localStorage.setItem("tournaments",JSON.stringify(tournaments));
   if(current) localStorage.setItem("currentTournament",current);
+  else localStorage.removeItem("currentTournament");
+}
+
+/* ===== FALLBACK CURRENT (fix efter slet/refresh) ===== */
+function ensureCurrent(){
+  const keys = Object.keys(tournaments);
+  if((!current || !tournaments[current]) && keys.length){
+    current = keys[0];
+    saveAll();
+  }
 }
 
 /* ===== TURNERINGER ===== */
@@ -141,6 +151,7 @@ function refreshSelect(){
   });
   if(current && tournaments[current]) tournamentSelect.value=current;
 }
+
 tournamentSelect.onchange=()=>{
   current=tournamentSelect.value;
   saveAll();
@@ -155,12 +166,29 @@ function createTournament(){
   saveAll();refreshSelect();hydrate();
 }
 
+/* ===== SLET TURNERING (FIX: vælg ny current) ===== */
 function deleteTournament(){
   if(!confirm("Slet turnering?")) return;
+
   delete tournaments[current];
-  current=null;
+
+  const keys = Object.keys(tournaments);
+  current = keys.length ? keys[0] : null;
+
   saveAll();
-  location.reload();
+
+  // Opdatér UI uden at kræve at brugeren opretter en ny turnering
+  if(current){
+    refreshSelect();
+    hydrate();
+  } else {
+    // Ingen turneringer tilbage -> ryd visning
+    refreshSelect();
+    players.innerHTML=""; matches.innerHTML=""; resultat.innerHTML="";
+    playersBox.classList.add("hidden");
+    matchesBox.classList.add("hidden");
+    resultBox.classList.add("hidden");
+  }
 }
 
 /* ===== IMPORT/EXPORT TURNERING ===== */
@@ -172,13 +200,14 @@ function exportTournament(){
   a.download=current+".json";
   a.click();
 }
-function importTournament(e){
-  const f=e.target.files[0]; if(!f) return;
+
+function importTournament(event){
+  const f=event.target.files[0]; if(!f) return;
   const r=new FileReader();
   r.onload=()=>{
     const name=f.name.replace(".json","");
     tournaments[name]=JSON.parse(r.result);
-    // Sørg for defaults
+
     tournaments[name].players ||= [];
     tournaments[name].matches ||= [];
     tournaments[name].scores ||= [];
@@ -187,7 +216,9 @@ function importTournament(e){
 
     current=name;
     saveAll();
-    location.reload();
+    ensureCurrent();
+    refreshSelect();
+    hydrate();
   };
   r.readAsText(f);
 }
@@ -195,9 +226,13 @@ function importTournament(e){
 /* ===== HYDRATE ===== */
 function hydrate(){
   const t=tournaments[current];
-  if(!t) return;
+  if(!t){
+    playersBox.classList.add("hidden");
+    matchesBox.classList.add("hidden");
+    resultBox.classList.add("hidden");
+    return;
+  }
 
-  // defaults
   t.players ||= [];
   t.matches ||= [];
   t.scores ||= [];
@@ -208,14 +243,13 @@ function hydrate(){
   matches.innerHTML="";
   resultat.innerHTML="";
 
-  // spiller inputs
   t.players.forEach(p=>{
     const inp=document.createElement("input");
     inp.value=p.name;
     inp.oninput=()=>{
       p.name=inp.value;
       saveAll();
-      render(); // genrender ok ved navneændring
+      render();
     };
     players.appendChild(inp);
   });
@@ -279,8 +313,6 @@ function getName(id){
 function render(){
   const t=tournaments[current];
   if(!t || !t.matches.length){
-    // Skjul program og stilling hvis der ikke er program endnu
-    if(t && t.players && t.players.length) playersBox.classList.remove("hidden");
     matchesBox.classList.add("hidden");
     resultBox.classList.add("hidden");
     return;
@@ -340,7 +372,6 @@ function toggleLock(i,val){
   const t=tournaments[current];
   t.locks[i]=!!val;
   saveAll();
-  // re-render OK ved lock, ingen behov for fokus i scorefeltet her
   render();
 }
 
@@ -430,12 +461,10 @@ function beregn(){
 }
 
 /* ===== PDF EXPORT (stilling) ===== */
-function exportPDF(){
-  // Print CSS skjuler alt undtagen stilling
-  window.print();
-}
+function exportPDF(){ window.print(); }
 
 /* ===== INIT ===== */
+ensureCurrent();
 refreshSelect();
 if(current && tournaments[current]) hydrate();
 </script>
