@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <title>Americano Padel</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1e7f5c">
 
 <style>
+/* ===== BASE ===== */
 body{font-family:Arial;background:#f4f6f8;margin:0;padding:8px}
 h2{text-align:center;margin:8px 0}
 .box{background:#fff;padding:10px;margin-bottom:10px;border-radius:8px}
@@ -18,12 +18,10 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
 .danger{background:#b00020}
 .hidden{display:none}
 
-/* Runder */
+/* ===== ROUNDS & MATCHES ===== */
 .round{margin-top:14px}
 .round h3{margin:6px 0}
 .bye{font-style:italic;color:#666;margin-bottom:6px}
-
-/* Kamp */
 .match{background:#f1f1f1;padding:10px;border-radius:6px;margin-bottom:8px}
 .match.locked{opacity:.6}
 
@@ -38,15 +36,24 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
 .score{font-size:26px;text-align:center}
 .score input{width:64px;font-size:24px;text-align:center}
 
+/* Mobile */
 @media(max-width:600px){
   .scoreline{grid-template-columns:1fr}
   .score{font-size:32px}
 }
 
-/* Tabel */
+/* ===== TABLE ===== */
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 .check{color:#1e7f5c;font-weight:bold;font-size:18px}
+
+/* ===== PRINT / PDF ===== */
+@media print{
+  body{background:#fff}
+  .box:not(#resultBox), #matchesBox, button, input, select{display:none!important}
+  #resultBox{display:block!important}
+  h2{margin-bottom:12px}
+}
 </style>
 </head>
 
@@ -61,7 +68,7 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 <input id="newTournamentName" placeholder="Ny turnering">
 <button onclick="createTournament()">Opret ny turnering</button>
 
-<button class="secondary" onclick="exportTournament()">Eksportér</button>
+<button class="secondary" onclick="exportTournament()">Eksportér turnering (JSON)</button>
 <input type="file" accept=".json" onchange="importTournament(event)">
 </div>
 
@@ -100,15 +107,14 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 </thead>
 <tbody id="resultat"></tbody>
 </table>
+<button class="secondary" onclick="exportPDF()">Eksportér stilling (PDF)</button>
 <button class="danger" onclick="deleteTournament()">Slet turnering</button>
 </div>
 
 <script>
-if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js");
-}
+if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js");}
 
-/* ===== GLOBAL STATE ===== */
+/* ===== STATE ===== */
 let tournaments = JSON.parse(localStorage.getItem("tournaments") || "{}");
 let current = localStorage.getItem("currentTournament") || null;
 
@@ -125,67 +131,40 @@ function refreshSelect(){
     o.value=name;o.textContent=name;
     tournamentSelect.appendChild(o);
   });
-  if(current && tournaments[current]){
-    tournamentSelect.value=current;
-  }
+  if(current && tournaments[current]) tournamentSelect.value=current;
 }
-
-function createTournament(){
-  const name=newTournamentName.value.trim();
-  if(!name || tournaments[name]) return alert("Ugyldigt navn");
-  tournaments[name]={players:[],matches:[],scores:[],locks:[],TOTAL:32};
-  current=name;
-  saveAll();
-  refreshSelect();
-  hydrate();
-}
-
-function deleteTournament(){
-  if(!confirm("Slet turnering?")) return;
-  delete tournaments[current];
-  current=null;
-  saveAll();
-  location.reload();
-}
-
 tournamentSelect.onchange=()=>{
   current=tournamentSelect.value;
   saveAll();
   hydrate();
 };
 
-/* ===== HARD RE-HYDRATE (VIGTIG) ===== */
+function createTournament(){
+  const name=newTournamentName.value.trim();
+  if(!name || tournaments[name]) return alert("Ugyldigt navn");
+  tournaments[name]={players:[],matches:[],scores:[],locks:[],TOTAL:32};
+  current=name; saveAll(); refreshSelect(); hydrate();
+}
+function deleteTournament(){
+  if(!confirm("Slet turnering?")) return;
+  delete tournaments[current]; current=null; saveAll(); location.reload();
+}
+
+/* ===== HYDRATE (HARD RE-RENDER) ===== */
 function hydrate(){
   if(!current || !tournaments[current]) return;
+  players.innerHTML=""; matches.innerHTML=""; resultat.innerHTML="";
+  const t=tournaments[current];
+  t.players ||= []; t.matches ||= []; t.scores ||= []; t.locks ||= [];
+  t.TOTAL ||= Number(maxPoints.value);
 
-  // Nulstil ALT UI
-  players.innerHTML="";
-  matches.innerHTML="";
-  resultat.innerHTML="";
-
-  const t = tournaments[current];
-  t.players ||= [];
-  t.matches ||= [];
-  t.scores  ||= [];
-  t.locks   ||= [];
-  t.TOTAL   ||= Number(maxPoints.value);
-
-  // Genskab spiller-inputs
   t.players.forEach(p=>{
     const inp=document.createElement("input");
     inp.value=p.name;
-    inp.oninput=()=>{
-      p.name=inp.value;
-      saveAll();
-      render();
-    };
+    inp.oninput=()=>{p.name=inp.value; saveAll(); render();};
     players.appendChild(inp);
   });
-
-  if(t.players.length){
-    playersBox.classList.remove("hidden");
-  }
-
+  if(t.players.length) playersBox.classList.remove("hidden");
   render();
 }
 
@@ -195,52 +174,39 @@ function initPlayers(){
   const t=tournaments[current];
   const n=Number(playerCount.value);
   t.players=[];
-  for(let i=0;i<n;i++){
-    t.players.push({id:i,name:`Spiller ${i+1}`});
-  }
-  saveAll();
-  hydrate();
+  for(let i=0;i<n;i++) t.players.push({id:i,name:`Spiller ${i+1}`});
+  saveAll(); hydrate();
 }
 
 /* ===== PROGRAM ===== */
 function generateProgram(){
   const t=tournaments[current];
-  t.matches=[];
-  t.scores=[];
-  t.locks=[];
+  t.matches=[]; t.scores=[]; t.locks=[];
   t.TOTAL=Number(maxPoints.value);
-
   const p=t.players;
-  let fixed=p[0];
-  let rest=p.slice(1);
-  let round=1;
+  let fixed=p[0], rest=p.slice(1), round=1;
 
   for(let r=0;r<p.length-1;r++){
     const rp=[fixed,...rest];
     let pairs=[];
     for(let i=0;i<Math.floor(p.length/2);i++){
-      pairs.push([rp[i].id,rp[p.length-1-i].id]);
+      pairs.push([rp[i].id, rp[p.length-1-i].id]);
     }
     for(let i=0;i<pairs.length;i+=2){
       if(pairs[i+1]){
-        t.matches.push({h:pairs[i],u:pairs[i+1],round});
-        t.scores.push(null);
-        t.locks.push(false);
+        t.matches.push({h:pairs[i], u:pairs[i+1], round});
+        t.scores.push(null); t.locks.push(false);
       }
     }
-    round++;
-    rest.unshift(rest.pop());
+    round++; rest.unshift(rest.pop());
   }
-
-  saveAll();
-  render();
+  saveAll(); render();
 }
 
 /* ===== RENDER ===== */
 function render(){
   const t=tournaments[current];
   if(!t || !t.matches.length) return;
-
   matches.innerHTML="";
   const rounds=[...new Set(t.matches.map(m=>m.round))];
 
@@ -252,63 +218,58 @@ function render(){
       t.matches[i].u.forEach(id=>played.add(id));
     });
     const byes=t.players.filter(p=>!played.has(p.id)).map(p=>p.name);
-
     matches.innerHTML+=`
       <div class="round">
         <h3>Runde ${r}</h3>
         ${byes.length?`<div class="bye">Sidder over: ${byes.join(", ")}</div>`:""}
       </div>`;
-
     idx.forEach(i=>{
       const m=t.matches[i];
       matches.innerHTML+=`
-      <div class="match ${t.locks[i]?'locked':''}">
+      <div class="match">
         <div class="scoreline">
           <div class="team">${m.h.map(id=>t.players[id].name).join(" & ")}</div>
           <div class="score">
-            <input type="number" ${t.locks[i]?'disabled':''}
-              value="${t.scores[i] ?? ""}"
+            <input type="number" value="${t.scores[i] ?? ""}"
               oninput="indtast(${i},this.value)">
-            – ${t.scores[i]!=null ? t.TOTAL - t.scores[i] : ""}
+            – <span id="away-score-${current}-${i}">
+              ${t.scores[i]!=null ? t.TOTAL - t.scores[i] : ""}
+            </span>
           </div>
           <div class="team">${m.u.map(id=>t.players[id].name).join(" & ")}</div>
         </div>
       </div>`;
     });
   });
-
-  beregn();
-  matchesBox.classList.remove("hidden");
+  beregn(); matchesBox.classList.remove("hidden");
 }
 
-/* ===== SCORE ===== */
+/* ===== SCORE INPUT ===== */
 function indtast(i,v){
   const t=tournaments[current];
   if(v===""){
     t.scores[i]=null;
-    saveAll();
-    beregn();
-    return;
+    const s=document.getElementById(`away-score-${current}-${i}`);
+    if(s) s.textContent="";
+    saveAll(); beregn(); return;
   }
   v=Math.max(0,Math.min(t.TOTAL,Number(v)));
   t.scores[i]=v;
-  saveAll();
-  beregn();
+  const s=document.getElementById(`away-score-${current}-${i}`);
+  if(s) s.textContent=t.TOTAL - v;
+  saveAll(); beregn();
 }
 
 /* ===== STILLLING ===== */
 function beregn(){
   const t=tournaments[current];
   if(!t) return;
-
   let pts={},wins={},games={},overs={};
-  t.players.forEach(p=>{
-    pts[p.id]=0;wins[p.id]=0;games[p.id]=0;overs[p.id]=false;
-  });
+  t.players.forEach(p=>{pts[p.id]=0;wins[p.id]=0;games[p.id]=0;overs[p.id]=false;});
 
   t.matches.forEach((m,i)=>{
     if(t.scores[i]==null) return;
-    const h=t.scores[i],u=t.TOTAL-h;
+    const h=t.scores[i], u=t.TOTAL-h;
     m.h.forEach(id=>{pts[id]+=h;games[id]++;});
     m.u.forEach(id=>{pts[id]+=u;games[id]++;});
     if(h>u)m.h.forEach(id=>wins[id]++);
@@ -325,9 +286,7 @@ function beregn(){
         t.matches[i].u.forEach(id=>played.add(id));
       });
       t.players.filter(p=>!played.has(p.id)).forEach(p=>{
-        pts[p.id]+=t.TOTAL/2;
-        games[p.id]++;
-        overs[p.id]=true;
+        pts[p.id]+=t.TOTAL/2; games[p.id]++; overs[p.id]=true;
       });
     }
   });
@@ -343,29 +302,22 @@ function beregn(){
         <td>${games[p.id]?(pts[p.id]/games[p.id]).toFixed(1):"-"}</td>
         <td>${overs[p.id]?'<span class="check">✓</span>':""}</td>
       </tr>`).join("");
-
   resultBox.classList.remove("hidden");
 }
 
-/* ===== IMPORT / EXPORT ===== */
+/* ===== EXPORT ===== */
 function exportTournament(){
   const blob=new Blob([JSON.stringify(tournaments[current])],{type:"application/json"});
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=current+".json";
-  a.click();
+  a.href=URL.createObjectURL(blob); a.download=current+".json"; a.click();
 }
 function importTournament(e){
-  const f=e.target.files[0];
-  if(!f) return;
+  const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
-  r.onload=()=>{
-    tournaments[f.name.replace(".json","")]=JSON.parse(r.result);
-    saveAll();
-    location.reload();
-  };
+  r.onload=()=>{tournaments[f.name.replace(".json","")]=JSON.parse(r.result); saveAll(); location.reload();};
   r.readAsText(f);
 }
+function exportPDF(){ window.print(); }
 
 /* ===== INIT ===== */
 refreshSelect();
