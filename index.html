@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<title>Americano Padel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e7f5c">
+</head>
+<body>
+<h1>Americano Padel</h1>
+<p>Dette er PWA-versionen. Appen er klar til brug offline.</p>
+
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js");
+}
+</script>
+</body>
+</html>
