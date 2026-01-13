@@ -13,8 +13,6 @@ h2{text-align:center;margin:8px 0}
 .box{background:#fff;padding:10px;margin-bottom:10px;border-radius:8px}
 input,button,select{width:100%;padding:10px;margin-top:6px;font-size:16px}
 button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
-.secondary{background:#555}
-.danger{background:#b00020}
 .hidden{display:none}
 
 .round{margin-top:14px}
@@ -40,7 +38,6 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
 
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
-.check{color:#1e7f5c;font-weight:bold;font-size:18px}
 </style>
 </head>
 
@@ -78,9 +75,7 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 <h3>Stilling</h3>
 <table>
 <thead>
-<tr>
-<th>Spiller</th><th>Point</th><th>Vundne</th><th>Kampe</th><th>Snit</th><th>Oversidder</th>
-</tr>
+<tr><th>Spiller</th><th>Point</th><th>Vundne</th><th>Kampe</th><th>Snit</th></tr>
 </thead>
 <tbody id="resultat"></tbody>
 </table>
@@ -93,14 +88,6 @@ let current = localStorage.getItem("currentTournament")||null;
 function saveAll(){
   localStorage.setItem("tournaments",JSON.stringify(tournaments));
   if(current) localStorage.setItem("currentTournament",current);
-}
-
-function getPlayer(id){
-  return tournaments[current].players.find(p=>p.id===id);
-}
-function getPlayerName(id){
-  const p=getPlayer(id);
-  return p?p.name:"?";
 }
 
 /* TURNERINGER */
@@ -127,7 +114,7 @@ function createTournament(){
   saveAll();refreshSelect();hydrate();
 }
 
-/* INIT / HYDRATE */
+/* HYDRATE */
 function hydrate(){
   const t=tournaments[current];
   if(!t)return;
@@ -142,12 +129,13 @@ function hydrate(){
   render();
 }
 
-/* SPILLERE */
+/* SPILLERE – RETTET */
 function initPlayers(){
   const t=tournaments[current];
   t.players=[];
+  const base=Date.now();
   for(let i=0;i<playerCount.value;i++){
-    t.players.push({id:crypto.randomUUID(),name:`Spiller ${i+1}`});
+    t.players.push({id:`p-${base}-${i}`,name:`Spiller ${i+1}`});
   }
   saveAll();hydrate();
 }
@@ -157,14 +145,18 @@ function generateProgram(){
   const t=tournaments[current];
   t.matches=[];t.scores=[];
   t.TOTAL=Number(maxPoints.value);
-  const p=t.players.map(p=>p.id);
-  let fixed=p[0],rest=p.slice(1),round=1;
+  const ids=t.players.map(p=>p.id);
+  let fixed=ids[0],rest=ids.slice(1),round=1;
 
-  for(let r=0;r<p.length-1;r++){
+  for(let r=0;r<ids.length-1;r++){
     const rp=[fixed,...rest];
-    for(let i=0;i<Math.floor(p.length/2);i+=2){
+    for(let i=0;i<Math.floor(ids.length/2);i+=2){
       if(rp[i+1]){
-        t.matches.push({h:[rp[i],rp[p.length-1-i]],u:[rp[i+1],rp[p.length-2-i]],round});
+        t.matches.push({
+          h:[rp[i],rp[ids.length-1-i]],
+          u:[rp[i+1],rp[ids.length-2-i]],
+          round
+        });
         t.scores.push(null);
       }
     }
@@ -173,13 +165,17 @@ function generateProgram(){
   saveAll();render();
 }
 
+function getName(id){
+  const p=tournaments[current].players.find(p=>p.id===id);
+  return p?p.name:"?";
+}
+
 /* RENDER */
 function render(){
   const t=tournaments[current];
   if(!t||!t.matches.length)return;
   matches.innerHTML="";
   const rounds=[...new Set(t.matches.map(m=>m.round))];
-
   rounds.forEach(r=>{
     matches.innerHTML+=`<div class="round"><h3>Runde ${r}</h3></div>`;
     t.matches.forEach((m,i)=>{
@@ -187,12 +183,13 @@ function render(){
       matches.innerHTML+=`
       <div class="match">
         <div class="scoreline">
-          <div class="team">${m.h.map(getPlayerName).join(" & ")}</div>
+          <div class="team">${m.h.map(getName).join(" & ")}</div>
           <div class="score">
-            <input type="number" value="${t.scores[i]??""}" oninput="indtast(${i},this.value)">
+            <input type="number" value="${t.scores[i]??""}"
+              oninput="indtast(${i},this.value)">
             – ${t.scores[i]!=null?t.TOTAL-t.scores[i]:""}
           </div>
-          <div class="team">${m.u.map(getPlayerName).join(" & ")}</div>
+          <div class="team">${m.u.map(getName).join(" & ")}</div>
         </div>
       </div>`;
     });
@@ -200,7 +197,6 @@ function render(){
   beregn();matchesBox.classList.remove("hidden");
 }
 
-/* SCORE */
 function indtast(i,v){
   const t=tournaments[current];
   if(v===""){t.scores[i]=null;saveAll();beregn();return;}
@@ -211,9 +207,8 @@ function indtast(i,v){
 /* STILLING */
 function beregn(){
   const t=tournaments[current];
-  let pts={},wins={},games={},overs={};
-  t.players.forEach(p=>{pts[p.id]=0;wins[p.id]=0;games[p.id]=0;overs[p.id]=false;});
-
+  let pts={},wins={},games={};
+  t.players.forEach(p=>{pts[p.id]=0;wins[p.id]=0;games[p.id]=0;});
   t.matches.forEach((m,i)=>{
     if(t.scores[i]==null)return;
     const h=t.scores[i],u=t.TOTAL-h;
@@ -222,9 +217,8 @@ function beregn(){
     if(h>u)m.h.forEach(id=>wins[id]++);
     if(u>h)m.u.forEach(id=>wins[id]++);
   });
-
   resultat.innerHTML=t.players
-    .sort((a,b)=>pts[b.id]-pts[a.id]||wins[b.id]-wins[a.id])
+    .sort((a,b)=>pts[b.id]-pts[a.id])
     .map(p=>`
       <tr>
         <td>${p.name}</td>
@@ -232,7 +226,6 @@ function beregn(){
         <td>${wins[p.id]}</td>
         <td>${games[p.id]}</td>
         <td>${games[p.id]?(pts[p.id]/games[p.id]).toFixed(1):"-"}</td>
-        <td>${overs[p.id]?'<span class="check">✓</span>':""}</td>
       </tr>`).join("");
   resultBox.classList.remove("hidden");
 }
