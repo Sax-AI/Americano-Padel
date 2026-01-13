@@ -49,7 +49,6 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 .check{color:#1e7f5c;font-weight:bold;font-size:18px}
 
-/* PDF/Print: vis kun stilling */
 @media print{
   body{background:#fff;padding:0}
   .box:not(#resultBox), #matchesBox, h2{display:none!important}
@@ -111,9 +110,12 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 <th>Spiller</th>
 <th>Point</th>
 <th>Vundne</th>
-<th>Kampe</th>
-<th>Snit</th>
+<th>Programsatte</th>
+<th>Spillede</th>
 <th>Oversidder</th>
+<th>Runder</th>
+<th>Snit</th>
+<th>Oversidder ✓</th>
 </tr>
 </thead>
 <tbody id="resultat"></tbody>
@@ -136,7 +138,6 @@ function saveAll(){
   if(current) localStorage.setItem("currentTournament",current);
   else localStorage.removeItem("currentTournament");
 }
-
 function ensureCurrent(){
   const keys = Object.keys(tournaments);
   if((!current || !tournaments[current]) && keys.length){
@@ -155,7 +156,6 @@ function refreshSelect(){
   });
   if(current && tournaments[current]) tournamentSelect.value=current;
 }
-
 tournamentSelect.onchange=()=>{
   current=tournamentSelect.value;
   saveAll();
@@ -172,12 +172,9 @@ function createTournament(){
 
 function deleteTournament(){
   if(!confirm("Slet turnering?")) return;
-
   delete tournaments[current];
-
   const keys = Object.keys(tournaments);
   current = keys.length ? keys[0] : null;
-
   saveAll();
 
   if(current){
@@ -201,7 +198,6 @@ function exportTournament(){
   a.download=current+".json";
   a.click();
 }
-
 function importTournament(event){
   const f=event.target.files[0]; if(!f) return;
   const r=new FileReader();
@@ -209,7 +205,6 @@ function importTournament(event){
     const name=f.name.replace(".json","");
     tournaments[name]=JSON.parse(r.result);
 
-    // defaults / bagudkompatibilitet
     const t=tournaments[name];
     t.players ||= [];
     t.matches ||= [];
@@ -244,7 +239,6 @@ function hydrate(){
   t.TOTAL ||= Number(maxPoints.value) || 32;
   t.COURTS ||= Number(courtCount.value) || 1;
 
-  // sæt inputs, så UI afspejler turneringen
   maxPoints.value = t.TOTAL;
   courtCount.value = t.COURTS;
 
@@ -258,7 +252,7 @@ function hydrate(){
     inp.oninput=()=>{
       p.name=inp.value;
       saveAll();
-      render(); // navneændring -> fuld render ok
+      render();
     };
     players.appendChild(inp);
   });
@@ -286,60 +280,60 @@ function initPlayers(){
   hydrate();
 }
 
-/* ===== PROGRAMGENERERING MED ANTAL BANER =====
-   Vi laver "super-runder" via circle method (round-robin par) og splitter
-   hver super-runde op i flere tids-slots afhængigt af COURTS.
-   Hver tids-slot = "Runde X" i UI (og bye tæller pr. tids-slot).
-*/
+function getName(id){
+  const p=tournaments[current].players.find(p=>p.id===id);
+  return p?p.name:"?";
+}
+
+/* ===== PROGRAMGENERERING (FAIR + BANER) ===== */
 function generateProgram(){
   const t=tournaments[current];
-
   t.TOTAL = Number(maxPoints.value) || 32;
   t.COURTS = Math.max(1, Number(courtCount.value) || 1);
 
   const ids=t.players.map(p=>p.id);
   if(ids.length < 4) return alert("Mindst 4 spillere");
 
-  // Hvis ulige antal, tilføj en "ghost" (sidder over i par-generationen)
-  const hasGhost = (ids.length % 2 === 1);
-  const ghost = "__GHOST__";
-  const list = hasGhost ? ids.concat([ghost]) : ids.slice();
+  const ghost="__GHOST__";
+  const list = (ids.length % 2 === 1) ? ids.concat([ghost]) : ids.slice();
   const n=list.length;
 
   const fixed=list[0];
   let rest=list.slice(1);
 
-  const timeSlots=[]; // hver slot: { round, court, h:[..], u:[..] }
+  const slots=[];
+  let slotRound=1;
 
-  let slotRound = 1;
+  let bufferPair=null;
 
-  // n-1 super-runder
   for(let r=0;r<n-1;r++){
     const rp=[fixed,...rest];
 
-    // lav par (n/2 par)
     const pairs=[];
     for(let i=0;i<n/2;i++){
-      const a=rp[i], b=rp[n-1-i];
-      pairs.push([a,b]);
+      pairs.push([rp[i], rp[n-1-i]]);
     }
 
-    // fjern ghost-par og par der indeholder ghost
-    const realPairs = pairs.filter(p=>p[0]!==ghost && p[1]!==ghost);
+    let realPairs = pairs.filter(p => p[0]!==ghost && p[1]!==ghost);
 
-    // gruppér to par ad gangen til en kamp (4 spillere)
+    if(bufferPair){
+      realPairs.unshift(bufferPair);
+      bufferPair=null;
+    }
+
+    if(realPairs.length % 2 === 1){
+      bufferPair = realPairs.pop();
+    }
+
     const matches=[];
     for(let i=0;i<realPairs.length;i+=2){
-      if(realPairs[i+1]){
-        matches.push({h:realPairs[i], u:realPairs[i+1]});
-      }
+      matches.push({h: realPairs[i], u: realPairs[i+1]});
     }
 
-    // split matches ud på tids-slots med COURTS pr slot
     for(let start=0; start<matches.length; start += t.COURTS){
       const slice = matches.slice(start, start+t.COURTS);
       slice.forEach((m,idx)=>{
-        timeSlots.push({
+        slots.push({
           round: slotRound,
           court: idx+1,
           h: m.h,
@@ -349,21 +343,15 @@ function generateProgram(){
       slotRound++;
     }
 
-    // roter rest
     rest.unshift(rest.pop());
   }
 
-  t.matches = timeSlots;
-  t.scores = Array(timeSlots.length).fill(null);
-  t.locks  = Array(timeSlots.length).fill(false);
+  t.matches = slots;
+  t.scores = Array(slots.length).fill(null);
+  t.locks  = Array(slots.length).fill(false);
 
   saveAll();
   render();
-}
-
-function getName(id){
-  const p=tournaments[current].players.find(p=>p.id===id);
-  return p?p.name:"?";
 }
 
 /* ===== RENDER ===== */
@@ -372,17 +360,16 @@ function render(){
   if(!t || !t.matches.length){
     matchesBox.classList.add("hidden");
     resultBox.classList.add("hidden");
+    // stadig muligt at se stilling uden program? Nej, skjult indtil program
     return;
   }
 
   matches.innerHTML="";
-
   const rounds=[...new Set(t.matches.map(m=>m.round))];
 
   rounds.forEach(r=>{
     const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
 
-    // hvem spiller i denne tids-slot?
     const played=new Set();
     idx.forEach(i=>{
       t.matches[i].h.forEach(id=>played.add(id));
@@ -396,7 +383,6 @@ function render(){
         ${byes.length?`<div class="bye">Sidder over: ${byes.join(", ")}</div>`:""}
       </div>`;
 
-    // kampe pr bane
     idx.forEach(i=>{
       const m=t.matches[i];
       const locked=!!t.locks[i];
@@ -406,7 +392,8 @@ function render(){
           <span class="badge">Bane ${m.court}</span>
           <label><input type="checkbox" ${locked?'checked':''} onchange="toggleLock(${i},this.checked)"> Lås kamp</label>
         </div>
-        <div class="scoreline">
+        <div class
+        ="scoreline">
           <div class="team">${m.h.map(getName).join(" & ")}</div>
           <div class="score">
             <input type="number"
@@ -443,13 +430,10 @@ function indtast(i,v){
   if(t.locks[i]) return;
 
   const span=document.getElementById(`away-${current}-${i}`);
-
   if(v===""){
     t.scores[i]=null;
     if(span) span.textContent="";
-    saveAll();
-    beregn();
-    return;
+    saveAll(); beregn(); return;
   }
 
   v=Math.max(0,Math.min(t.TOTAL,Number(v)));
@@ -472,59 +456,86 @@ function resetTournament(){
   render();
 }
 
-/* ===== STILLLING + OVERSIDDER (bye-point kun når hele runden er færdig) ===== */
+/* ===== STILLLING + OVERSIDDER + PROGRAMSATTE ===== */
 function beregn(){
   const t=tournaments[current];
   if(!t) return;
 
-  let pts={},wins={},games={},overs={};
+  let pts={},wins={},scheduled={},playedMatches={},oversCount={},roundsCount={},oversFlag={};
+
   t.players.forEach(p=>{
-    pts[p.id]=0; wins[p.id]=0; games[p.id]=0; overs[p.id]=false;
+    pts[p.id]=0;
+    wins[p.id]=0;
+    scheduled[p.id]=0;        // programsatte kampe
+    playedMatches[p.id]=0;    // spillede kampe (med resultat)
+    oversCount[p.id]=0;       // oversidderrunder med tildelte point
+    roundsCount[p.id]=0;      // total runder = spillede + oversidder
+    oversFlag[p.id]=false;
   });
 
-  // Kamp-point
+  // programsatte (tælles uanset score)
+  t.matches.forEach(m=>{
+    m.h.forEach(id=>scheduled[id]++);
+    m.u.forEach(id=>scheduled[id]++);
+  });
+
+  // kampresultater
   t.matches.forEach((m,i)=>{
     if(t.scores[i]==null) return;
     const h=t.scores[i], u=t.TOTAL-h;
-    m.h.forEach(id=>{pts[id]+=h; games[id]++;});
-    m.u.forEach(id=>{pts[id]+=u; games[id]++;});
+
+    m.h.forEach(id=>{pts[id]+=h; playedMatches[id]++;});
+    m.u.forEach(id=>{pts[id]+=u; playedMatches[id]++;});
+
     if(h>u) m.h.forEach(id=>wins[id]++);
     if(u>h) m.u.forEach(id=>wins[id]++);
   });
 
-  // Bye pr. tids-slot (runde) – kun når alle baner i runden har score
+  // oversidder pr. runde (tids-slot) når alle baner i runden er udfyldt
   const rounds=[...new Set(t.matches.map(m=>m.round))];
   rounds.forEach(r=>{
     const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
+    if(!idx.length) return;
 
-    // runden er afsluttet når ALLE kampe i denne tids-slot har score
-    if(idx.length && idx.every(i=>t.scores[i]!=null)){
+    if(idx.every(i=>t.scores[i]!=null)){
       const played=new Set();
       idx.forEach(i=>{
         t.matches[i].h.forEach(id=>played.add(id));
         t.matches[i].u.forEach(id=>played.add(id));
       });
+
       t.players.filter(p=>!played.has(p.id)).forEach(p=>{
         pts[p.id]+=t.TOTAL/2;
-        games[p.id]+=1;        // bye tæller som kamp i snit
-        overs[p.id]=true;
+        oversCount[p.id]+=1;
+        oversFlag[p.id]=true;
       });
     }
+  });
+
+  // total runder
+  t.players.forEach(p=>{
+    roundsCount[p.id] = playedMatches[p.id] + oversCount[p.id];
   });
 
   resultat.innerHTML = t.players
     .slice()
     .sort((a,b)=>pts[b.id]-pts[a.id] || wins[b.id]-wins[a.id])
-    .map(p=>`
+    .map(p=>{
+      const r = roundsCount[p.id];
+      const snit = r ? (pts[p.id]/r).toFixed(1) : "-";
+      return `
       <tr>
         <td>${p.name}</td>
         <td>${pts[p.id]}</td>
         <td>${wins[p.id]}</td>
-        <td>${games[p.id]}</td>
-        <td>${games[p.id]?(pts[p.id]/games[p.id]).toFixed(1):"-"}</td>
-        <td>${overs[p.id]?'<span class="check">✓</span>':""}</td>
-      </tr>
-    `).join("");
+        <td>${scheduled[p.id]}</td>
+        <td>${playedMatches[p.id]}</td>
+        <td>${oversCount[p.id]}</td>
+        <td>${r}</td>
+        <td>${snit}</td>
+        <td>${oversFlag[p.id]?'<span class="check">✓</span>':""}</td>
+      </tr>`;
+    }).join("");
 }
 
 /* ===== PDF EXPORT (stilling) ===== */
