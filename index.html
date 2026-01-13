@@ -4,17 +4,249 @@
 <meta charset="UTF-8">
 <title>Americano Padel</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- PWA -->
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1e7f5c">
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background:#f4f6f8;
+    padding:15px;
+    max-width:1200px;
+    margin:auto;
+}
+.box {
+    background:#fff;
+    padding:15px;
+    margin-bottom:15px;
+    border-radius:8px;
+}
+input, button {
+    width:100%;
+    padding:8px;
+    margin-top:6px;
+}
+button {
+    background:#1e7f5c;
+    color:white;
+    border:none;
+    font-size:16px;
+}
+.reset { background:#b00020; }
+.hidden { display:none; }
+
+.match {
+    background:#f1f1f1;
+    padding:14px;
+    border-radius:6px;
+    margin-top:12px;
+}
+
+/* SCORE-LINJE (fodbold-look) */
+.scoreline {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+    margin-top:8px;
+    font-size:24px;
+    font-weight:bold;
+}
+.team {
+    width:40%;
+    text-align:right;
+}
+.team.away {
+    text-align:left;
+}
+.score {
+    font-size:32px;
+    min-width:140px;
+    text-align:center;
+}
+.score input {
+    width:60px;
+    font-size:26px;
+    text-align:center;
+}
+
+/* RESULTAT */
+table {
+    width:100%;
+    border-collapse:collapse;
+}
+th, td {
+    padding:8px;
+    border-bottom:1px solid #ddd;
+    text-align:center;
+}
+</style>
 </head>
+
 <body>
-<h1>Americano Padel</h1>
-<p>Dette er PWA-versionen. Appen er klar til brug offline.</p>
+
+<h2>Americano Padel</h2>
+
+<div class="box">
+<label>Antal spillere</label>
+<input type="number" id="playerCount" value="8" min="4">
+
+<label>Antal baner</label>
+<input type="number" id="courtCount" value="2" min="1">
+
+<label>Point pr. kamp</label>
+<input type="number" id="maxPoints" value="32" min="1">
+
+<button onclick="opretSpillere()">Opret spillere</button>
+</div>
+
+<div class="box hidden" id="playersBox">
+<div id="players"></div>
+<button onclick="lavAmericano()">Opret program</button>
+</div>
+
+<div class="box hidden" id="matchesBox">
+<h3>Kampe</h3>
+<div id="matches"></div>
+</div>
+
+<div class="box hidden" id="resultBox">
+<h3>Stilling</h3>
+<table>
+<thead>
+<tr>
+<th>Spiller</th>
+<th>Point</th>
+<th>Vundne</th>
+<th>Kampe</th>
+<th>Snit</th>
+</tr>
+</thead>
+<tbody id="resultat"></tbody>
+</table>
+<button class="reset" onclick="reset()">Reset</button>
+</div>
 
 <script>
+/* ===== PWA ===== */
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js");
+    navigator.serviceWorker.register("sw.js");
 }
+
+/* ===== LOGIK ===== */
+let spillere = [], kampe = [], scores = [], byes = [];
+let TOTAL = 32;
+
+function opretSpillere(){
+    const n = Number(playerCount.value);
+    players.innerHTML = "";
+    for(let i=0;i<n;i++){
+        players.innerHTML += `<input placeholder="Spiller ${i+1}">`;
+    }
+    playersBox.classList.remove("hidden");
+}
+
+function lavAmericano(){
+    TOTAL = Number(maxPoints.value);
+    spillere = [...document.querySelectorAll("#players input")]
+        .map(i => i.value || i.placeholder);
+
+    kampe = []; scores = []; byes = [];
+
+    const n = spillere.length;
+    let fixed = spillere[0];
+    let rest = spillere.slice(1);
+
+    for(let r=0;r<n-1;r++){
+        let round = [fixed, ...rest];
+        let pairs = [];
+
+        for(let i=0;i<Math.floor(n/2);i++){
+            pairs.push([round[i], round[n-1-i]]);
+        }
+
+        if(n % 2 === 1){
+            byes.push(round[Math.floor(n/2)]);
+        }
+
+        for(let i=0;i<pairs.length;i+=2){
+            if(pairs[i+1]){
+                kampe.push({ h:pairs[i], u:pairs[i+1] });
+                scores.push(null);
+            }
+        }
+        rest.unshift(rest.pop());
+    }
+
+    renderKampe();
+}
+
+function renderKampe(){
+    matches.innerHTML = "";
+    kampe.forEach((k,i)=>{
+        matches.innerHTML += `
+        <div class="match">
+            <div class="scoreline">
+                <div class="team">${k.h.join(" & ")}</div>
+                <div class="score">
+                    <input type="number" min="0" max="${TOTAL}"
+                           oninput="indtast(${i},this.value)">
+                    <span> – </span>
+                    <span id="away${i}"></span>
+                </div>
+                <div class="team away">${k.u.join(" & ")}</div>
+            </div>
+        </div>`;
+    });
+    matchesBox.classList.remove("hidden");
+}
+
+function indtast(i,v){
+    v = Math.max(0, Math.min(TOTAL, Number(v)));
+    scores[i] = v;
+    document.getElementById("away"+i).innerText = TOTAL - v;
+    beregn();
+}
+
+function beregn(){
+    let pts={}, wins={}, games={};
+    spillere.forEach(s=>{
+        pts[s]=0; wins[s]=0; games[s]=0;
+    });
+
+    kampe.forEach((m,i)=>{
+        if(scores[i]==null) return;
+        const h = scores[i], u = TOTAL - h;
+        m.h.forEach(s=>{ pts[s]+=h; games[s]++; });
+        m.u.forEach(s=>{ pts[s]+=u; games[s]++; });
+        if(h>u) m.h.forEach(s=>wins[s]++);
+        if(u>h) m.u.forEach(s=>wins[s]++);
+    });
+
+    /* BYE = ½ point + 1 kamp */
+    byes.forEach(s=>{
+        pts[s] += TOTAL/2;
+        games[s] += 1;
+    });
+
+    resultat.innerHTML = spillere
+        .sort((a,b)=> pts[b]-pts[a] || wins[b]-wins[a])
+        .map(s=>`
+        <tr>
+            <td>${s}</td>
+            <td>${pts[s]}</td>
+            <td>${wins[s]}</td>
+            <td>${games[s]}</td>
+            <td>${(pts[s]/games[s]).toFixed(1)}</td>
+        </tr>`).join("");
+
+    resultBox.classList.remove("hidden");
+}
+
+function reset(){ location.reload(); }
 </script>
+
 </body>
 </html>
