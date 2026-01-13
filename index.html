@@ -18,13 +18,16 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
 .danger{background:#b00020}
 .hidden{display:none}
 
+/* Runder */
 .round{margin-top:14px}
 .round h3{margin:6px 0}
 .bye{font-style:italic;color:#666;margin-bottom:6px}
 
+/* Kamp */
 .match{background:#f1f1f1;padding:10px;border-radius:6px;margin-bottom:8px}
 .match.locked{opacity:.6}
 
+/* Layout */
 .scoreline{
   display:grid;
   grid-template-columns:1fr auto 1fr;
@@ -40,6 +43,7 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
   .score{font-size:32px}
 }
 
+/* Tabel */
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 .check{color:#1e7f5c;font-weight:bold;font-size:18px}
@@ -86,7 +90,12 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 <table>
 <thead>
 <tr>
-<th>Spiller</th><th>Point</th><th>Vundne</th><th>Kampe</th><th>Snit</th><th>Oversidder</th>
+<th>Spiller</th>
+<th>Point</th>
+<th>Vundne</th>
+<th>Kampe</th>
+<th>Snit</th>
+<th>Oversidder</th>
 </tr>
 </thead>
 <tbody id="resultat"></tbody>
@@ -95,196 +104,233 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 </div>
 
 <script>
-if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js")}
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js");
+}
 
-/* ===== STATE ===== */
-let tournaments = JSON.parse(localStorage.getItem("tournaments") || "{}")
-let current = localStorage.getItem("currentTournament") || null
+/* ===== GLOBAL STATE ===== */
+let tournaments = JSON.parse(localStorage.getItem("tournaments") || "{}");
+let current = localStorage.getItem("currentTournament") || null;
 
 function saveAll(){
-  localStorage.setItem("tournaments", JSON.stringify(tournaments))
-  if(current) localStorage.setItem("currentTournament", current)
+  localStorage.setItem("tournaments", JSON.stringify(tournaments));
+  if(current) localStorage.setItem("currentTournament", current);
 }
 
 /* ===== TURNERINGER ===== */
 function refreshSelect(){
-  tournamentSelect.innerHTML = ""
+  tournamentSelect.innerHTML="";
   Object.keys(tournaments).forEach(name=>{
-    const o=document.createElement("option")
-    o.value=name;o.textContent=name
-    tournamentSelect.appendChild(o)
-  })
+    const o=document.createElement("option");
+    o.value=name;o.textContent=name;
+    tournamentSelect.appendChild(o);
+  });
   if(current && tournaments[current]){
-    tournamentSelect.value=current
+    tournamentSelect.value=current;
   }
 }
 
 function createTournament(){
-  const name=newTournamentName.value.trim()
-  if(!name||tournaments[name]) return alert("Ugyldigt navn")
-  tournaments[name]={players:[],matches:[],scores:[],locks:[],TOTAL:32}
-  current=name
-  saveAll()
-  refreshSelect()
-  hydrate()
+  const name=newTournamentName.value.trim();
+  if(!name || tournaments[name]) return alert("Ugyldigt navn");
+  tournaments[name]={players:[],matches:[],scores:[],locks:[],TOTAL:32};
+  current=name;
+  saveAll();
+  refreshSelect();
+  hydrate();
 }
 
 function deleteTournament(){
-  if(!confirm("Slet turnering?"))return
-  delete tournaments[current]
-  current=null
-  saveAll()
-  location.reload()
+  if(!confirm("Slet turnering?")) return;
+  delete tournaments[current];
+  current=null;
+  saveAll();
+  location.reload();
 }
 
 tournamentSelect.onchange=()=>{
-  current=tournamentSelect.value
-  saveAll()
-  hydrate()
+  current=tournamentSelect.value;
+  saveAll();
+  hydrate();
+};
+
+/* ===== HARD RE-HYDRATE (VIGTIG) ===== */
+function hydrate(){
+  if(!current || !tournaments[current]) return;
+
+  // Nulstil ALT UI
+  players.innerHTML="";
+  matches.innerHTML="";
+  resultat.innerHTML="";
+
+  const t = tournaments[current];
+  t.players ||= [];
+  t.matches ||= [];
+  t.scores  ||= [];
+  t.locks   ||= [];
+  t.TOTAL   ||= Number(maxPoints.value);
+
+  // Genskab spiller-inputs
+  t.players.forEach(p=>{
+    const inp=document.createElement("input");
+    inp.value=p.name;
+    inp.oninput=()=>{
+      p.name=inp.value;
+      saveAll();
+      render();
+    };
+    players.appendChild(inp);
+  });
+
+  if(t.players.length){
+    playersBox.classList.remove("hidden");
+  }
+
+  render();
 }
 
 /* ===== SPILLERE ===== */
 function initPlayers(){
-  const n=Number(playerCount.value)
-  const t=tournaments[current]
-  t.players=[]
+  if(!current) return alert("Opret turnering først");
+  const t=tournaments[current];
+  const n=Number(playerCount.value);
+  t.players=[];
   for(let i=0;i<n;i++){
-    t.players.push({id:i,name:`Spiller ${i+1}`})
+    t.players.push({id:i,name:`Spiller ${i+1}`});
   }
-  saveAll()
-  renderPlayers()
-}
-
-function renderPlayers(){
-  const t=tournaments[current]
-  players.innerHTML=""
-  t.players.forEach(p=>{
-    const inp=document.createElement("input")
-    inp.value=p.name
-    inp.oninput=()=>{p.name=inp.value;saveAll();render()}
-    players.appendChild(inp)
-  })
-  playersBox.classList.remove("hidden")
+  saveAll();
+  hydrate();
 }
 
 /* ===== PROGRAM ===== */
 function generateProgram(){
-  const t=tournaments[current]
-  t.matches=[];t.scores=[];t.locks=[]
-  t.TOTAL=Number(maxPoints.value)
+  const t=tournaments[current];
+  t.matches=[];
+  t.scores=[];
+  t.locks=[];
+  t.TOTAL=Number(maxPoints.value);
 
-  const p=t.players
-  let fixed=p[0],rest=p.slice(1),round=1
+  const p=t.players;
+  let fixed=p[0];
+  let rest=p.slice(1);
+  let round=1;
+
   for(let r=0;r<p.length-1;r++){
-    let rp=[fixed,...rest]
-    let pairs=[]
+    const rp=[fixed,...rest];
+    let pairs=[];
     for(let i=0;i<Math.floor(p.length/2);i++){
-      pairs.push([rp[i].id,rp[p.length-1-i].id])
+      pairs.push([rp[i].id,rp[p.length-1-i].id]);
     }
     for(let i=0;i<pairs.length;i+=2){
       if(pairs[i+1]){
-        t.matches.push({h:pairs[i],u:pairs[i+1],round})
-        t.scores.push(null)
-        t.locks.push(false)
+        t.matches.push({h:pairs[i],u:pairs[i+1],round});
+        t.scores.push(null);
+        t.locks.push(false);
       }
     }
-    round++;rest.unshift(rest.pop())
+    round++;
+    rest.unshift(rest.pop());
   }
-  saveAll()
-  render()
+
+  saveAll();
+  render();
 }
 
 /* ===== RENDER ===== */
-function hydrate(){
-  if(!current||!tournaments[current])return
-  renderPlayers()
-  render()
-}
-
 function render(){
-  const t=tournaments[current]
-  if(!t||!t.matches)return
-  matches.innerHTML=""
-  const rounds=[...new Set(t.matches.map(m=>m.round))]
+  const t=tournaments[current];
+  if(!t || !t.matches.length) return;
+
+  matches.innerHTML="";
+  const rounds=[...new Set(t.matches.map(m=>m.round))];
 
   rounds.forEach(r=>{
-    const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null)
-    const played=new Set()
+    const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
+    const played=new Set();
     idx.forEach(i=>{
-      t.matches[i].h.forEach(id=>played.add(id))
-      t.matches[i].u.forEach(id=>played.add(id))
-    })
-    const byes=t.players.filter(p=>!played.has(p.id)).map(p=>p.name)
+      t.matches[i].h.forEach(id=>played.add(id));
+      t.matches[i].u.forEach(id=>played.add(id));
+    });
+    const byes=t.players.filter(p=>!played.has(p.id)).map(p=>p.name);
 
-    matches.innerHTML+=`<div class="round"><h3>Runde ${r}</h3>${byes.length?`<div class="bye">Sidder over: ${byes.join(", ")}</div>`:""}</div>`
+    matches.innerHTML+=`
+      <div class="round">
+        <h3>Runde ${r}</h3>
+        ${byes.length?`<div class="bye">Sidder over: ${byes.join(", ")}</div>`:""}
+      </div>`;
 
     idx.forEach(i=>{
-      const m=t.matches[i]
+      const m=t.matches[i];
       matches.innerHTML+=`
       <div class="match ${t.locks[i]?'locked':''}">
         <div class="scoreline">
           <div class="team">${m.h.map(id=>t.players[id].name).join(" & ")}</div>
           <div class="score">
             <input type="number" ${t.locks[i]?'disabled':''}
-              value="${t.scores[i]??""}"
+              value="${t.scores[i] ?? ""}"
               oninput="indtast(${i},this.value)">
-            – <span id="away${i}">${t.scores[i]!=null?t.TOTAL-t.scores[i]:""}</span>
+            – ${t.scores[i]!=null ? t.TOTAL - t.scores[i] : ""}
           </div>
           <div class="team">${m.u.map(id=>t.players[id].name).join(" & ")}</div>
         </div>
-      </div>`
-    })
-  })
-  beregn()
-  matchesBox.classList.remove("hidden")
+      </div>`;
+    });
+  });
+
+  beregn();
+  matchesBox.classList.remove("hidden");
 }
 
 /* ===== SCORE ===== */
 function indtast(i,v){
-  const t=tournaments[current]
+  const t=tournaments[current];
   if(v===""){
-    t.scores[i]=null
-    document.getElementById("away"+i).innerText=""
-    saveAll();beregn();return
+    t.scores[i]=null;
+    saveAll();
+    beregn();
+    return;
   }
-  v=Math.max(0,Math.min(t.TOTAL,Number(v)))
-  t.scores[i]=v
-  document.getElementById("away"+i).innerText=t.TOTAL-v
-  saveAll();beregn()
+  v=Math.max(0,Math.min(t.TOTAL,Number(v)));
+  t.scores[i]=v;
+  saveAll();
+  beregn();
 }
 
 /* ===== STILLLING ===== */
 function beregn(){
-  const t=tournaments[current]
-  if(!t)return
-  let pts={},wins={},games={},overs={}
-  t.players.forEach(p=>{pts[p.id]=0;wins[p.id]=0;games[p.id]=0;overs[p.id]=false})
+  const t=tournaments[current];
+  if(!t) return;
+
+  let pts={},wins={},games={},overs={};
+  t.players.forEach(p=>{
+    pts[p.id]=0;wins[p.id]=0;games[p.id]=0;overs[p.id]=false;
+  });
 
   t.matches.forEach((m,i)=>{
-    if(t.scores[i]==null)return
-    const h=t.scores[i],u=t.TOTAL-h
-    m.h.forEach(id=>{pts[id]+=h;games[id]++})
-    m.u.forEach(id=>{pts[id]+=u;games[id]++})
-    if(h>u)m.h.forEach(id=>wins[id]++)
-    if(u>h)m.u.forEach(id=>wins[id]++)
-  })
+    if(t.scores[i]==null) return;
+    const h=t.scores[i],u=t.TOTAL-h;
+    m.h.forEach(id=>{pts[id]+=h;games[id]++;});
+    m.u.forEach(id=>{pts[id]+=u;games[id]++;});
+    if(h>u)m.h.forEach(id=>wins[id]++);
+    if(u>h)m.u.forEach(id=>wins[id]++);
+  });
 
-  const rounds=[...new Set(t.matches.map(m=>m.round))]
+  const rounds=[...new Set(t.matches.map(m=>m.round))];
   rounds.forEach(r=>{
-    const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null)
+    const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
     if(idx.every(i=>t.scores[i]!=null)){
-      const played=new Set()
+      const played=new Set();
       idx.forEach(i=>{
-        t.matches[i].h.forEach(id=>played.add(id))
-        t.matches[i].u.forEach(id=>played.add(id))
-      })
+        t.matches[i].h.forEach(id=>played.add(id));
+        t.matches[i].u.forEach(id=>played.add(id));
+      });
       t.players.filter(p=>!played.has(p.id)).forEach(p=>{
-        pts[p.id]+=t.TOTAL/2
-        games[p.id]++
-        overs[p.id]=true
-      })
+        pts[p.id]+=t.TOTAL/2;
+        games[p.id]++;
+        overs[p.id]=true;
+      });
     }
-  })
+  });
 
   resultat.innerHTML=t.players
     .sort((a,b)=>pts[b.id]-pts[a.id]||wins[b.id]-wins[a.id])
@@ -296,31 +342,34 @@ function beregn(){
         <td>${games[p.id]}</td>
         <td>${games[p.id]?(pts[p.id]/games[p.id]).toFixed(1):"-"}</td>
         <td>${overs[p.id]?'<span class="check">✓</span>':""}</td>
-      </tr>`).join("")
-  resultBox.classList.remove("hidden")
+      </tr>`).join("");
+
+  resultBox.classList.remove("hidden");
 }
 
 /* ===== IMPORT / EXPORT ===== */
 function exportTournament(){
-  const blob=new Blob([JSON.stringify(tournaments[current])],{type:"application/json"})
-  const a=document.createElement("a")
-  a.href=URL.createObjectURL(blob)
-  a.download=current+".json"
-  a.click()
+  const blob=new Blob([JSON.stringify(tournaments[current])],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=current+".json";
+  a.click();
 }
 function importTournament(e){
-  const f=e.target.files[0];if(!f)return
-  const r=new FileReader()
+  const f=e.target.files[0];
+  if(!f) return;
+  const r=new FileReader();
   r.onload=()=>{
-    tournaments[f.name.replace(".json","")]=JSON.parse(r.result)
-    saveAll();location.reload()
-  }
-  r.readAsText(f)
+    tournaments[f.name.replace(".json","")]=JSON.parse(r.result);
+    saveAll();
+    location.reload();
+  };
+  r.readAsText(f);
 }
 
 /* ===== INIT ===== */
-refreshSelect()
-if(current&&tournaments[current]) hydrate()
+refreshSelect();
+if(current && tournaments[current]) hydrate();
 </script>
 
 </body>
