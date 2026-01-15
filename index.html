@@ -12,7 +12,8 @@ body{font-family:Arial;background:#f4f6f8;margin:0;padding:8px}
 h2{text-align:center;margin:8px 0}
 .box{background:#fff;padding:10px;margin-bottom:10px;border-radius:8px}
 input,button,select{width:100%;padding:10px;margin-top:6px;font-size:16px}
-button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
+button{background:#1e7f5c;color:#fff;border:none;border-radius:6px;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
 .secondary{background:#555}
 .danger{background:#b00020}
 .hidden{display:none}
@@ -33,12 +34,12 @@ button{background:#1e7f5c;color:#fff;border:none;border-radius:6px}
   align-items:center;
 }
 .team{text-align:center;font-weight:bold;word-break:break-word}
-.score{font-size:26px;text-align:center}
+.score{font-size:26px;text-align:center;white-space:nowrap}
 .score input{width:64px;font-size:24px;text-align:center}
 
 @media(max-width:600px){
   .scoreline{grid-template-columns:1fr}
-  .score{font-size:32px}
+  .score{font-size:32px;white-space:normal}
 }
 
 .controls{margin-top:8px;display:flex;gap:10px;flex-wrap:wrap}
@@ -49,6 +50,14 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 .check{color:#1e7f5c;font-weight:bold;font-size:18px}
 
+.nameLink{
+  background:transparent;border:none;color:#1e7f5c;
+  text-decoration:underline;cursor:pointer;padding:0;margin:0;
+  font-size:14px;
+}
+.nameLink:hover{opacity:.85}
+
+/* PDF/Print: vis kun stilling */
 @media print{
   body{background:#fff;padding:0}
   .box:not(#resultBox), #matchesBox, h2{display:none!important}
@@ -62,7 +71,7 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 
 <h2>Americano Padel</h2>
 
-<div class="box">
+<div class="box" id="tournamentBox">
 <label>Turnering</label>
 <select id="tournamentSelect"></select>
 
@@ -71,14 +80,14 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 
 <div class="controls" style="margin-top:10px">
   <button class="mini secondary" onclick="exportTournament()">Eksportér turnering (JSON)</button>
-  <label class="mini" style="background:#eee;border-radius:6px">
+  <label class="mini" style="background:#eee;border-radius:6px;color:#000;border-radius:6px;padding:8px 10px">
     Importér
     <input type="file" accept=".json" onchange="importTournament(event)" style="display:none">
   </label>
 </div>
 </div>
 
-<div class="box">
+<div class="box" id="setupBox">
 <label>Antal spillere</label>
 <input type="number" id="playerCount" value="8" min="4">
 <label>Antal baner</label>
@@ -107,29 +116,38 @@ th,td{padding:6px;border-bottom:1px solid #ddd;text-align:center}
 <table>
 <thead>
 <tr>
-<th>Spiller</th>
-<th>Point</th>
-<th>Vundne</th>
-<th>Programsatte</th>
-<th>Spillede</th>
-<th>Oversidder</th>
-<th>Runder</th>
-<th>Snit</th>
-<th>Oversidder ✓</th>
+  <th>Spiller</th>
+  <th>Point</th>
+  <th>Vundne</th>
+  <th>Programsatte</th>
+  <th>Spillede</th>
+  <th>Oversidder</th>
+  <th>Runder</th>
+  <th>Snit</th>
+  <th>Oversidder ✓</th>
 </tr>
 </thead>
 <tbody id="resultat"></tbody>
 </table>
 
 <div class="controls">
+  <button class="mini secondary" onclick="openStandingsScreen()">Storskærm – Stilling</button>
   <button class="mini secondary" onclick="exportPDF()">Eksportér stilling (PDF)</button>
   <button class="mini danger" onclick="deleteTournament()">Slet turnering</button>
 </div>
 </div>
 
 <script>
-if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js");}
+/* =========================
+   PWA SW
+========================= */
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js");
+}
 
+/* =========================
+   STATE
+========================= */
 let tournaments = JSON.parse(localStorage.getItem("tournaments")||"{}");
 let current = localStorage.getItem("currentTournament")||null;
 
@@ -138,6 +156,17 @@ function saveAll(){
   if(current) localStorage.setItem("currentTournament",current);
   else localStorage.removeItem("currentTournament");
 }
+
+function getURL(){ return new URL(window.location.href); }
+
+/* Modes */
+function isStandingsMode(){ return getURL().searchParams.get("standings") === "1"; }
+function isPlayerMode(){ return getURL().searchParams.get("player") != null; }
+function getStandingsTournamentName(){ return getURL().searchParams.get("t") || current; }
+function getPlayerIdFromURL(){ return getURL().searchParams.get("player"); }
+function getTournamentFromURL(){ return getURL().searchParams.get("t") || current; }
+
+/* Fallback current */
 function ensureCurrent(){
   const keys = Object.keys(tournaments);
   if((!current || !tournaments[current]) && keys.length){
@@ -146,16 +175,19 @@ function ensureCurrent(){
   }
 }
 
-/* ===== TURNERINGER ===== */
+/* =========================
+   TURNERINGER
+========================= */
 function refreshSelect(){
   tournamentSelect.innerHTML="";
   Object.keys(tournaments).forEach(n=>{
     const o=document.createElement("option");
-    o.value=n;o.textContent=n;
+    o.value=n; o.textContent=n;
     tournamentSelect.appendChild(o);
   });
   if(current && tournaments[current]) tournamentSelect.value=current;
 }
+
 tournamentSelect.onchange=()=>{
   current=tournamentSelect.value;
   saveAll();
@@ -164,17 +196,20 @@ tournamentSelect.onchange=()=>{
 
 function createTournament(){
   const name=newTournamentName.value.trim();
-  if(!name||tournaments[name])return alert("Ugyldigt navn");
+  if(!name || tournaments[name]) return alert("Ugyldigt navn");
   tournaments[name]={players:[],matches:[],scores:[],locks:[],TOTAL:32,COURTS:2};
   current=name;
-  saveAll();refreshSelect();hydrate();
+  saveAll(); refreshSelect(); hydrate();
 }
 
 function deleteTournament(){
   if(!confirm("Slet turnering?")) return;
+
   delete tournaments[current];
+
   const keys = Object.keys(tournaments);
   current = keys.length ? keys[0] : null;
+
   saveAll();
 
   if(current){
@@ -189,7 +224,9 @@ function deleteTournament(){
   }
 }
 
-/* ===== IMPORT/EXPORT TURNERING ===== */
+/* =========================
+   IMPORT / EXPORT JSON
+========================= */
 function exportTournament(){
   if(!current) return;
   const blob=new Blob([JSON.stringify(tournaments[current])],{type:"application/json"});
@@ -198,8 +235,11 @@ function exportTournament(){
   a.download=current+".json";
   a.click();
 }
+
 function importTournament(event){
-  const f=event.target.files[0]; if(!f) return;
+  const f=event.target.files[0];
+  if(!f) return;
+
   const r=new FileReader();
   r.onload=()=>{
     const name=f.name.replace(".json","");
@@ -222,7 +262,9 @@ function importTournament(event){
   r.readAsText(f);
 }
 
-/* ===== HYDRATE ===== */
+/* =========================
+   HYDRATE / UI
+========================= */
 function hydrate(){
   const t=tournaments[current];
   if(!t){
@@ -261,14 +303,16 @@ function hydrate(){
   render();
 }
 
-/* ===== SPILLERE ===== */
+/* =========================
+   SPILLERE
+========================= */
 function initPlayers(){
   const t=tournaments[current];
   if(!t) return alert("Opret turnering først");
 
   t.players=[];
   const base=Date.now();
-  for(let i=0;i<playerCount.value;i++){
+  for(let i=0;i<Number(playerCount.value);i++){
     t.players.push({id:`p-${base}-${i}`,name:`Spiller ${i+1}`});
   }
 
@@ -280,14 +324,19 @@ function initPlayers(){
   hydrate();
 }
 
+function getPlayerById(t, id){ return t.players.find(p=>p.id===id); }
 function getName(id){
-  const p=tournaments[current].players.find(p=>p.id===id);
-  return p?p.name:"?";
+  const p=tournaments[current]?.players?.find(p=>p.id===id);
+  return p ? p.name : "?";
 }
 
-/* ===== PROGRAMGENERERING (FAIR + BANER) ===== */
+/* =========================
+   PROGRAM (FAIR + BANER)
+========================= */
 function generateProgram(){
   const t=tournaments[current];
+  if(!t) return;
+
   t.TOTAL = Number(maxPoints.value) || 32;
   t.COURTS = Math.max(1, Number(courtCount.value) || 1);
 
@@ -354,13 +403,16 @@ function generateProgram(){
   render();
 }
 
-/* ===== RENDER ===== */
+/* =========================
+   RENDER PROGRAM
+========================= */
 function render(){
   const t=tournaments[current];
-  if(!t || !t.matches.length){
+
+  if(!t || !t.matches || !t.matches.length){
     matchesBox.classList.add("hidden");
     resultBox.classList.add("hidden");
-    // stadig muligt at se stilling uden program? Nej, skjult indtil program
+    if(t && t.players && t.players.length) beregn();
     return;
   }
 
@@ -375,6 +427,7 @@ function render(){
       t.matches[i].h.forEach(id=>played.add(id));
       t.matches[i].u.forEach(id=>played.add(id));
     });
+
     const byes=t.players.filter(p=>!played.has(p.id)).map(p=>p.name);
 
     matches.innerHTML+=`
@@ -386,15 +439,17 @@ function render(){
     idx.forEach(i=>{
       const m=t.matches[i];
       const locked=!!t.locks[i];
+
       matches.innerHTML+=`
       <div class="match ${locked?'locked':''}">
         <div class="matchhead">
           <span class="badge">Bane ${m.court}</span>
           <label><input type="checkbox" ${locked?'checked':''} onchange="toggleLock(${i},this.checked)"> Lås kamp</label>
         </div>
-        <div class
-        ="scoreline">
+
+        <div class="scoreline">
           <div class="team">${m.h.map(getName).join(" & ")}</div>
+
           <div class="score">
             <input type="number"
               ${locked?'disabled':''}
@@ -402,9 +457,10 @@ function render(){
               oninput="indtast(${i},this.value)">
             –
             <span id="away-${current}-${i}">
-              ${t.scores[i]!=null ? t.TOTAL - t.scores[i] : ""}
+              ${t.scores[i]!=null ? (t.TOTAL - t.scores[i]) : ""}
             </span>
           </div>
+
           <div class="team">${m.u.map(getName).join(" & ")}</div>
         </div>
       </div>`;
@@ -416,7 +472,9 @@ function render(){
   resultBox.classList.remove("hidden");
 }
 
-/* ===== LÅS KAMP ===== */
+/* =========================
+   LÅS KAMP
+========================= */
 function toggleLock(i,val){
   const t=tournaments[current];
   t.locks[i]=!!val;
@@ -424,127 +482,623 @@ function toggleLock(i,val){
   render();
 }
 
-/* ===== SCORE INPUT (live away-score) ===== */
+/* =========================
+   SCORE INPUT (live ude-score)
+========================= */
 function indtast(i,v){
   const t=tournaments[current];
-  if(t.locks[i]) return;
+  if(!t || t.locks[i]) return;
 
   const span=document.getElementById(`away-${current}-${i}`);
+
   if(v===""){
     t.scores[i]=null;
     if(span) span.textContent="";
-    saveAll(); beregn(); return;
+    saveAll();
+    beregn();
+    return;
   }
 
-  v=Math.max(0,Math.min(t.TOTAL,Number(v)));
-  t.scores[i]=v;
-  if(span) span.textContent=t.TOTAL - v;
+  const clamped=Math.max(0, Math.min(t.TOTAL, Number(v)));
+  t.scores[i]=clamped;
+  if(span) span.textContent=String(t.TOTAL - clamped);
 
   saveAll();
   beregn();
 }
 
-/* ===== RESET TURNERING (scores + locks) ===== */
+/* =========================
+   RESET TURNERING (scores + locks)
+========================= */
 function resetTournament(){
   const t=tournaments[current];
-  if(!t || !t.matches.length) return;
+  if(!t || !t.matches || !t.matches.length) return;
   if(!confirm("Resetter alle resultater og låse?")) return;
 
   t.scores = t.scores.map(()=>null);
   t.locks  = t.locks.map(()=>false);
+
   saveAll();
   render();
 }
 
-/* ===== STILLLING + OVERSIDDER + PROGRAMSATTE ===== */
-function beregn(){
-  const t=tournaments[current];
-  if(!t) return;
-
-  let pts={},wins={},scheduled={},playedMatches={},oversCount={},roundsCount={},oversFlag={};
+/* =========================
+   COMPUTE STANDINGS (shared)
+========================= */
+function computeStandings(t){
+  const pts={}, wins={}, scheduled={}, playedMatches={}, oversCount={}, roundsCount={}, oversFlag={};
 
   t.players.forEach(p=>{
     pts[p.id]=0;
     wins[p.id]=0;
-    scheduled[p.id]=0;        // programsatte kampe
-    playedMatches[p.id]=0;    // spillede kampe (med resultat)
-    oversCount[p.id]=0;       // oversidderrunder med tildelte point
-    roundsCount[p.id]=0;      // total runder = spillede + oversidder
+    scheduled[p.id]=0;
+    playedMatches[p.id]=0;
+    oversCount[p.id]=0;
+    roundsCount[p.id]=0;
     oversFlag[p.id]=false;
   });
 
-  // programsatte (tælles uanset score)
-  t.matches.forEach(m=>{
-    m.h.forEach(id=>scheduled[id]++);
-    m.u.forEach(id=>scheduled[id]++);
-  });
+  if(t.matches && t.matches.length){
+    t.matches.forEach(m=>{
+      m.h.forEach(id=>scheduled[id]++);
+      m.u.forEach(id=>scheduled[id]++);
+    });
+  }
 
-  // kampresultater
-  t.matches.forEach((m,i)=>{
-    if(t.scores[i]==null) return;
-    const h=t.scores[i], u=t.TOTAL-h;
+  if(t.matches && t.matches.length){
+    t.matches.forEach((m,i)=>{
+      if(t.scores[i]==null) return;
+      const h=t.scores[i];
+      const u=t.TOTAL - h;
 
-    m.h.forEach(id=>{pts[id]+=h; playedMatches[id]++;});
-    m.u.forEach(id=>{pts[id]+=u; playedMatches[id]++;});
+      m.h.forEach(id=>{pts[id]+=h; playedMatches[id]++;});
+      m.u.forEach(id=>{pts[id]+=u; playedMatches[id]++;});
 
-    if(h>u) m.h.forEach(id=>wins[id]++);
-    if(u>h) m.u.forEach(id=>wins[id]++);
-  });
+      if(h>u) m.h.forEach(id=>wins[id]++);
+      if(u>h) m.u.forEach(id=>wins[id]++);
+    });
 
-  // oversidder pr. runde (tids-slot) når alle baner i runden er udfyldt
-  const rounds=[...new Set(t.matches.map(m=>m.round))];
-  rounds.forEach(r=>{
-    const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
-    if(!idx.length) return;
+    const rounds=[...new Set(t.matches.map(m=>m.round))];
+    rounds.forEach(r=>{
+      const idx=t.matches.map((m,i)=>m.round===r?i:null).filter(i=>i!==null);
+      if(!idx.length) return;
 
-    if(idx.every(i=>t.scores[i]!=null)){
-      const played=new Set();
-      idx.forEach(i=>{
-        t.matches[i].h.forEach(id=>played.add(id));
-        t.matches[i].u.forEach(id=>played.add(id));
-      });
+      if(idx.every(i=>t.scores[i]!=null)){
+        const played=new Set();
+        idx.forEach(i=>{
+          t.matches[i].h.forEach(id=>played.add(id));
+          t.matches[i].u.forEach(id=>played.add(id));
+        });
 
-      t.players.filter(p=>!played.has(p.id)).forEach(p=>{
-        pts[p.id]+=t.TOTAL/2;
-        oversCount[p.id]+=1;
-        oversFlag[p.id]=true;
-      });
-    }
-  });
+        t.players.filter(p=>!played.has(p.id)).forEach(p=>{
+          pts[p.id] += t.TOTAL/2;
+          oversCount[p.id] += 1;
+          oversFlag[p.id] = true;
+        });
+      }
+    });
+  }
 
-  // total runder
   t.players.forEach(p=>{
     roundsCount[p.id] = playedMatches[p.id] + oversCount[p.id];
   });
 
-  resultat.innerHTML = t.players
-    .slice()
-    .sort((a,b)=>pts[b.id]-pts[a.id] || wins[b.id]-wins[a.id])
-    .map(p=>{
-      const r = roundsCount[p.id];
-      const snit = r ? (pts[p.id]/r).toFixed(1) : "-";
-      return `
-      <tr>
-        <td>${p.name}</td>
-        <td>${pts[p.id]}</td>
-        <td>${wins[p.id]}</td>
-        <td>${scheduled[p.id]}</td>
-        <td>${playedMatches[p.id]}</td>
-        <td>${oversCount[p.id]}</td>
-        <td>${r}</td>
-        <td>${snit}</td>
-        <td>${oversFlag[p.id]?'<span class="check">✓</span>':""}</td>
-      </tr>`;
-    }).join("");
+  const sorted = t.players.slice().sort((a,b)=>
+    (pts[b.id]-pts[a.id]) || (wins[b.id]-wins[a.id])
+  );
+
+  return {pts,wins,scheduled,playedMatches,oversCount,roundsCount,oversFlag,sorted};
 }
 
-/* ===== PDF EXPORT (stilling) ===== */
+/* =========================
+   STILLING RENDER (normal)
+========================= */
+function beregn(){
+  const t=tournaments[current];
+  if(!t || !t.players) return;
+
+  const S = computeStandings(t);
+
+  resultat.innerHTML = S.sorted.map(p=>{
+    const r=S.roundsCount[p.id];
+    const snit = r ? (S.pts[p.id]/r).toFixed(1) : "-";
+    return `
+      <tr>
+        <td>
+          <button class="nameLink" onclick="openPlayerResults('${p.id}')">${p.name}</button>
+        </td>
+        <td>${S.pts[p.id]}</td>
+        <td>${S.wins[p.id]}</td>
+        <td>${S.scheduled[p.id]}</td>
+        <td>${S.playedMatches[p.id]}</td>
+        <td>${S.oversCount[p.id]}</td>
+        <td>${S.roundsCount[p.id]}</td>
+        <td>${snit}</td>
+        <td>${S.oversFlag[p.id]?'<span class="check">✓</span>':""}</td>
+      </tr>`;
+  }).join("");
+
+  resultBox.classList.remove("hidden");
+}
+
+/* =========================
+   PDF EXPORT
+========================= */
 function exportPDF(){ window.print(); }
 
-/* ===== INIT ===== */
-ensureCurrent();
-refreshSelect();
-if(current && tournaments[current]) hydrate();
+/* =========================
+   STORSKÆRM – STILLING (TV + PODIE + ANIMATION)
+========================= */
+function openStandingsScreen(){
+  if(!current) return alert("Vælg en turnering først");
+  const url = getURL();
+  url.searchParams.set("standings","1");
+  url.searchParams.set("t", current);
+  window.open(url.toString(), "_blank");
+}
+
+function medalSVG(type, place){
+  const fill = type==="gold" ? "url(#g)" : type==="silver" ? "url(#s)" : "url(#b)";
+  return `
+  <svg width="62" height="62" viewBox="0 0 64 64" aria-label="${place}">
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ffd86a"/><stop offset="1" stop-color="#b88700"/>
+      </linearGradient>
+      <linearGradient id="s" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#f2f2f2"/><stop offset="1" stop-color="#8d8d8d"/>
+      </linearGradient>
+      <linearGradient id="b" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#f2b079"/><stop offset="1" stop-color="#7a3b10"/>
+      </linearGradient>
+    </defs>
+    <circle cx="32" cy="32" r="24" fill="${fill}" stroke="#1b1b1b" stroke-width="2"/>
+    <circle cx="32" cy="32" r="19" fill="rgba(0,0,0,.08)"/>
+    <text x="32" y="40" text-anchor="middle" font-family="Arial" font-size="22" font-weight="800" fill="#111">${place}</text>
+  </svg>`;
+}
+
+/* --- subtle FLIP animation state --- */
+let tvPrevRects = new Map();
+let tvPrevOrder = [];
+
+function captureTVRects(){
+  tvPrevRects.clear();
+  const rows = document.querySelectorAll("#tvBody tr[data-pid]");
+  rows.forEach(r=>{
+    tvPrevRects.set(r.dataset.pid, r.getBoundingClientRect());
+  });
+}
+function applyTVFlip(){
+  const rows = document.querySelectorAll("#tvBody tr[data-pid]");
+  rows.forEach(r=>{
+    const pid = r.dataset.pid;
+    const prev = tvPrevRects.get(pid);
+    if(!prev) return;
+    const now = r.getBoundingClientRect();
+    const dy = prev.top - now.top;
+    if(Math.abs(dy) < 1) return;
+
+    r.style.transform = `translateY(${dy}px)`;
+    r.style.transition = "transform 0s";
+    requestAnimationFrame(()=>{
+      r.style.transition = "transform 350ms ease";
+      r.style.transform = "translateY(0px)";
+    });
+  });
+}
+
+function enterStandingsMode(){
+  const tName = getStandingsTournamentName();
+
+  document.querySelector("h2").style.display="none";
+  document.querySelectorAll(".box").forEach(b => b.style.display="none");
+
+  document.body.style.background="#050608";
+  document.body.style.padding="14px";
+
+  const wrapper = document.createElement("div");
+  wrapper.id="tvWrap";
+  wrapper.style.background="#0f1115";
+  wrapper.style.borderRadius="18px";
+  wrapper.style.padding="18px";
+  wrapper.style.boxShadow="0 0 0 1px #20222a inset, 0 20px 80px rgba(0,0,0,.55)";
+  wrapper.style.color="#fff";
+  wrapper.style.maxWidth="1400px";
+  wrapper.style.margin="0 auto";
+
+  wrapper.innerHTML = `
+    <style>
+      .podiumPulse{ animation: podiumPulse .35s ease; }
+      @keyframes podiumPulse{
+        from{ transform: translateY(6px); opacity:.92; }
+        to{ transform: translateY(0); opacity:1; }
+      }
+    </style>
+
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:34px;font-weight:800;letter-spacing:.02em">Stilling</div>
+        <div id="tvTour" style="opacity:.85;margin-top:4px;font-size:14px"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button id="tvFs" style="width:auto;padding:10px 14px;border-radius:12px;background:#1e7f5c;color:#fff;border:none">Fuldskærm</button>
+        <button id="tvClose" style="width:auto;padding:10px 14px;border-radius:12px;background:#555;color:#fff;border:none">Luk</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.2fr 2fr;gap:16px;margin-top:16px">
+      <div id="podium" style="background:#0b0c10;border-radius:16px;padding:16px;box-shadow:0 0 0 1px #20222a inset">
+        <div style="font-size:14px;opacity:.85;text-transform:uppercase;letter-spacing:.08em">Top 3</div>
+        <div id="podiumInner" style="margin-top:14px"></div>
+      </div>
+
+      <div style="background:#0b0c10;border-radius:16px;padding:16px;box-shadow:0 0 0 1px #20222a inset">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="font-size:14px;opacity:.85;text-transform:uppercase;letter-spacing:.08em">Rangliste</div>
+          <div id="tvUpdated" style="font-size:12px;opacity:.65"></div>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:18px">
+          <thead>
+            <tr style="text-transform:uppercase;letter-spacing:.06em;font-size:11px;opacity:.9">
+              <th style="text-align:left;padding:12px 10px;border-bottom:1px solid #20222a">Spiller</th>
+              <th style="padding:12px 10px;border-bottom:1px solid #20222a">Point</th>
+              <th style="padding:12px 10px;border-bottom:1px solid #20222a">V</th>
+              <th style="padding:12px 10px;border-bottom:1px solid #20222a">Prog</th>
+              <th style="padding:12px 10px;border-bottom:1px solid #20222a">Spil</th>
+              <th style="padding:12px 10px;border-bottom:1px solid #20222a">Over</th>
+              <th style="padding:12px 10px;border-bottom:1px solid #20222a">R</th>
+              <th style="padding:12px 10px;border-bottom:1px solid #20222a">Snit</th>
+            </tr>
+          </thead>
+          <tbody id="tvBody"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(wrapper);
+
+  document.getElementById("tvFs").onclick = async ()=>{
+    try{ await document.documentElement.requestFullscreen(); }catch(e){}
+  };
+  document.getElementById("tvClose").onclick = ()=> window.close();
+
+  function renderPodium(S){
+    const top = S.sorted.slice(0,3);
+
+    const slots = [
+      {place:2, type:"silver", idx:1},
+      {place:1, type:"gold", idx:0},
+      {place:3, type:"bronze", idx:2},
+    ];
+
+    const cards = slots.map(s=>{
+      const p = top[s.idx];
+      const name = p ? p.name : "-";
+      const points = p ? S.pts[p.id] : 0;
+
+      const height = s.place===1 ? 190 : s.place===2 ? 155 : 140;
+
+      const bg = s.place===1
+        ? "linear-gradient(135deg, rgba(255,216,106,.24), rgba(184,135,0,.14))"
+        : s.place===2
+        ? "linear-gradient(135deg, rgba(242,242,242,.20), rgba(141,141,141,.12))"
+        : "linear-gradient(135deg, rgba(242,176,121,.22), rgba(122,59,16,.12))";
+
+      return `
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:10px">
+          ${medalSVG(s.type, s.place)}
+
+          <div style="
+            width:100%;
+            height:${height}px;
+            border-radius:14px;
+            background:${bg};
+            box-shadow:0 0 0 1px rgba(255,255,255,.07) inset;
+            overflow:hidden;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:14px;
+          ">
+
+            <div style="width:100%;text-align:center">
+              <div style="
+                font-weight:900;
+                font-size:${s.place===1?28:24}px;
+                line-height:1.1;
+                word-break:break-word;
+                text-shadow:0 2px 14px rgba(0,0,0,.35);
+              ">${name}</div>
+
+              <div style="
+                margin-top:10px;
+                opacity:.95;
+                font-size:${s.place===1?20:18}px;
+                font-weight:800;
+                letter-spacing:.02em;
+              ">${points} point</div>
+            </div>
+
+          </div>
+        </div>`;
+    }).join("");
+
+    const podiumInner = document.getElementById("podiumInner");
+    podiumInner.innerHTML = `
+      <div style="display:flex;gap:12px;align-items:flex-end">${cards}</div>
+      <div style="margin-top:14px;opacity:.75;font-size:12px">
+        Rangering sorteres efter point, derefter vundne kampe.
+      </div>
+    `;
+  }
+
+  function renderTV(S){
+    document.getElementById("tvTour").textContent = `Turnering: ${tName}`;
+
+    const newOrder = S.sorted.map(p=>p.id);
+    const top3 = newOrder.slice(0,3).join("|");
+    const prevTop3 = tvPrevOrder.slice(0,3).join("|");
+    const podiumChanged = top3 !== prevTop3;
+
+    renderPodium(S);
+    if(podiumChanged){
+      const pi = document.getElementById("podiumInner");
+      pi.classList.remove("podiumPulse");
+      void pi.offsetWidth;
+      pi.classList.add("podiumPulse");
+    }
+
+    captureTVRects();
+
+    const body = document.getElementById("tvBody");
+    body.innerHTML = S.sorted.map((p, idx)=>{
+      const r=S.roundsCount[p.id];
+      const snit = r ? (S.pts[p.id]/r).toFixed(1) : "-";
+      const isTop3 = idx < 3;
+
+      const bg = isTop3
+        ? "background: linear-gradient(90deg, rgba(30,127,92,.22), rgba(0,0,0,0));"
+        : "";
+
+      return `
+        <tr data-pid="${p.id}" style="${bg}">
+          <td style="text-align:left;padding:12px 10px;border-bottom:1px solid #20222a;font-weight:${isTop3?800:600}">
+            ${idx+1}. ${p.name}
+          </td>
+          <td style="padding:12px 10px;border-bottom:1px solid #20222a">${S.pts[p.id]}</td>
+          <td style="padding:12px 10px;border-bottom:1px solid #20222a">${S.wins[p.id]}</td>
+          <td style="padding:12px 10px;border-bottom:1px solid #20222a">${S.scheduled[p.id]}</td>
+          <td style="padding:12px 10px;border-bottom:1px solid #20222a">${S.playedMatches[p.id]}</td>
+          <td style="padding:12px 10px;border-bottom:1px solid #20222a">${S.oversCount[p.id]}</td>
+          <td style="padding:12px 10px;border-bottom:1px solid #20222a">${S.roundsCount[p.id]}</td>
+          <td style="padding:12px 10px;border-bottom:1px solid #20222a">${snit}</td>
+        </tr>`;
+    }).join("");
+
+    requestAnimationFrame(()=> applyTVFlip());
+
+    document.getElementById("tvUpdated").textContent = `Opdateret: ${new Date().toLocaleTimeString()}`;
+    tvPrevOrder = newOrder;
+  }
+
+  function refreshFromStorage(){
+    const all = JSON.parse(localStorage.getItem("tournaments") || "{}");
+    tournaments = all;
+
+    const chosen = getStandingsTournamentName();
+    if(chosen && all[chosen]){
+      current = chosen;
+    } else {
+      const keys = Object.keys(all);
+      current = keys.length ? keys[0] : null;
+    }
+    if(!current) return;
+
+    const t = tournaments[current];
+    const S = computeStandings(t);
+    renderTV(S);
+  }
+
+  window.addEventListener("storage", (e)=>{
+    if(e.key === "tournaments") refreshFromStorage();
+  });
+
+  setInterval(refreshFromStorage, 1000);
+  refreshFromStorage();
+}
+
+/* =========================
+   PLAYER RESULTS (ny fane)
+========================= */
+function openPlayerResults(playerId){
+  if(!current) return;
+  const url = getURL();
+  url.searchParams.set("t", current);
+  url.searchParams.set("player", playerId);
+  window.open(url.toString(), "_blank");
+}
+
+function enterPlayerMode(){
+  const tName = getTournamentFromURL();
+  const pid = getPlayerIdFromURL();
+
+  document.querySelector("h2").style.display="none";
+  document.querySelectorAll(".box").forEach(b => b.style.display="none");
+  document.body.style.background="#0b0c10";
+  document.body.style.padding="14px";
+
+  const wrap = document.createElement("div");
+  wrap.style.maxWidth="1100px";
+  wrap.style.margin="0 auto";
+  wrap.style.background="#0f1115";
+  wrap.style.borderRadius="18px";
+  wrap.style.padding="18px";
+  wrap.style.color="#fff";
+  wrap.style.boxShadow="0 0 0 1px #20222a inset, 0 20px 80px rgba(0,0,0,.55)";
+  wrap.id="playerWrap";
+
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div>
+        <div id="pTitle" style="font-size:30px;font-weight:900"></div>
+        <div id="pSub" style="opacity:.8;margin-top:4px;font-size:13px"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button id="pClose" style="width:auto;padding:10px 14px;border-radius:12px;background:#555;color:#fff;border:none">Luk</button>
+      </div>
+    </div>
+
+    <div id="pSummary" style="margin-top:14px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"></div>
+
+    <div style="margin-top:16px;background:#0b0c10;border-radius:16px;padding:14px;box-shadow:0 0 0 1px #20222a inset">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-size:14px;opacity:.85;text-transform:uppercase;letter-spacing:.08em">Resultater</div>
+        <div id="pUpdated" style="font-size:12px;opacity:.65"></div>
+      </div>
+      <div id="pList" style="margin-top:10px;display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+  `;
+
+  document.body.appendChild(wrap);
+  document.getElementById("pClose").onclick = ()=> window.close();
+
+  function pill(title, value){
+    return `
+      <div style="background:#0b0c10;border-radius:14px;padding:12px;box-shadow:0 0 0 1px #20222a inset">
+        <div style="font-size:11px;opacity:.75;text-transform:uppercase;letter-spacing:.08em">${title}</div>
+        <div style="margin-top:6px;font-size:22px;font-weight:900">${value}</div>
+      </div>
+    `;
+  }
+
+  function renderPlayer(){
+    const all = JSON.parse(localStorage.getItem("tournaments") || "{}");
+    tournaments = all;
+    if(!all[tName]) return;
+
+    current = tName;
+    const t = all[tName];
+
+    const p = getPlayerById(t, pid);
+    const pname = p ? p.name : "Ukendt spiller";
+
+    const S = computeStandings(t);
+
+    document.getElementById("pTitle").textContent = pname;
+    document.getElementById("pSub").textContent = `Turnering: ${tName}`;
+
+    document.getElementById("pSummary").innerHTML =
+      pill("Point", S.pts[pid] ?? 0) +
+      pill("Vundne", S.wins[pid] ?? 0) +
+      pill("Spillede", S.playedMatches[pid] ?? 0) +
+      pill("Oversidder", S.oversCount[pid] ?? 0);
+
+    const items = [];
+    const rounds = [...new Set((t.matches||[]).map(m=>m.round))].sort((a,b)=>a-b);
+
+    rounds.forEach(roundNo=>{
+      const idx = t.matches.map((m,i)=>m.round===roundNo?i:null).filter(i=>i!==null);
+      if(!idx.length) return;
+
+      let playedThisRound = false;
+
+      idx.forEach(i=>{
+        const m = t.matches[i];
+        const inHome = m.h.includes(pid);
+        const inAway = m.u.includes(pid);
+        if(!inHome && !inAway) return;
+
+        playedThisRound = true;
+
+        const partner = inHome ? m.h.find(x=>x!==pid) : m.u.find(x=>x!==pid);
+        const opps = inHome ? m.u : m.h;
+
+        const myTeam = inHome ? m.h : m.u;
+        const isScored = t.scores[i]!=null;
+
+        let scoreTxt = "Ikke spillet endnu";
+        let outcome = "Afventer";
+        if(isScored){
+          const home = t.scores[i];
+          const away = t.TOTAL - home;
+          const my = inHome ? home : away;
+          const op = inHome ? away : home;
+          scoreTxt = `${my} - ${op}`;
+
+          if(my>op) outcome = "Vundet";
+          else if(my<op) outcome = "Tabt";
+          else outcome = "Uafgjort";
+        }
+
+        const bg = outcome==="Vundet" ? "rgba(30,127,92,.18)" : outcome==="Tabt" ? "rgba(176,0,32,.18)" : "rgba(255,255,255,.06)";
+
+        items.push(`
+          <div style="background:${bg};border-radius:14px;padding:12px;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+              <div style="font-weight:900">Runde ${roundNo} • Bane ${m.court}</div>
+              <div style="opacity:.85">${outcome}</div>
+            </div>
+
+            <div style="margin-top:8px;display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center">
+              <div style="text-align:left;font-weight:700">${myTeam.map(id=>getPlayerById(t,id)?.name||"?").join(" & ")}</div>
+              <div style="font-size:22px;font-weight:900;text-align:center">${isScored?scoreTxt:"—"}</div>
+              <div style="text-align:right;font-weight:700">${opps.map(id=>getPlayerById(t,id)?.name||"?").join(" & ")}</div>
+            </div>
+
+            <div style="margin-top:8px;opacity:.85;font-size:13px">
+              Partner: <b>${partner? (getPlayerById(t,partner)?.name||"?") : "-"}</b>
+            </div>
+          </div>
+        `);
+      });
+
+      const roundComplete = idx.every(i=>t.scores[i]!=null);
+      if(roundComplete && !playedThisRound){
+        items.push(`
+          <div style="background:rgba(255,255,255,.06);border-radius:14px;padding:12px;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+              <div style="font-weight:900">Runde ${roundNo}</div>
+              <div style="opacity:.85">Oversidder</div>
+            </div>
+            <div style="margin-top:8px;font-size:18px;font-weight:900">
+              +${t.TOTAL/2} point
+            </div>
+          </div>
+        `);
+      }
+    });
+
+    document.getElementById("pList").innerHTML = items.length ? items.join("") : `
+      <div style="opacity:.8">Ingen resultater endnu.</div>
+    `;
+
+    document.getElementById("pUpdated").textContent = `Opdateret: ${new Date().toLocaleTimeString()}`;
+  }
+
+  window.addEventListener("storage",(e)=>{
+    if(e.key==="tournaments") renderPlayer();
+  });
+  setInterval(renderPlayer, 1000);
+  renderPlayer();
+}
+
+/* =========================
+   INIT
+========================= */
+(function init(){
+  ensureCurrent();
+  refreshSelect();
+  if(current && tournaments[current]) hydrate();
+
+  if(isStandingsMode()){
+    enterStandingsMode();
+  } else if(isPlayerMode()){
+    enterPlayerMode();
+  }
+})();
 </script>
 
 </body>
